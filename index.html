@@ -1,4 +1,24 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#1a1614" />
+  <title>Roast Dinner Timer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #1a1614; }
+    #root { min-height: 100vh; }
+  </style>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 // ─── RECIPE DATABASE ────────────────────────────────────────────────────
 const MEAT_TYPES = {
@@ -373,7 +393,7 @@ const TYPE_ICONS = { prep: "🔪", heat: "🔥", cook: "⏲️", action: "👋",
 
 // ─── MAIN APP ───────────────────────────────────────────────────────────
 
-export default function RoastTimer() {
+function RoastTimer() {
   const [screen, setScreen] = useState("select");
   const [selected, setSelected] = useState(new Set());
   const [meatWeight, setMeatWeight] = useState(1500);
@@ -1111,3 +1131,6 @@ const S = {
     textAlign: "center", paddingTop: 80,
   },
 };
+// RENDER
+ReactDOM.createRoot(document.getElementById("root")).render(<RoastTimer />);
+</script></body></html>
