@@ -384,7 +384,7 @@ export default function RoastTimer() {
   });
   const [serveMin, setServeMin] = useState(0);
   const [timeline, setTimeline] = useState([]);
-  const [cookState, setCookState] = useState({ idx: 0, paused: false, pausedAt: null, startedAt: null, offset: 0 });
+  const [cookState, setCookState] = useState({ completed: new Set(), skipped: new Set(), manualPause: false });
   const [now, setNow] = useState(Date.now());
   const timerRef = useRef(null);
   const wakeLockRef = useRef(null);
@@ -408,12 +408,12 @@ export default function RoastTimer() {
 
   // Timer tick
   useEffect(() => {
-    if (screen === "cook" && !cookState.paused) {
+    if (screen === "cook" && !cookState.manualPause) {
       timerRef.current = setInterval(() => setNow(Date.now()), 250);
       return () => clearInterval(timerRef.current);
     }
     return () => clearInterval(timerRef.current);
-  }, [screen, cookState.paused]);
+  }, [screen, cookState.manualPause]);
 
   // Wake lock
   useEffect(() => {
@@ -423,27 +423,19 @@ export default function RoastTimer() {
     }
   }, [screen]);
 
-  // Auto-advance when timer expires
+  // Alert when a new step's time arrives
+  const lastAlertedRef = useRef(-1);
   useEffect(() => {
     if (screen !== "cook") return;
-    const currentIdx = cookState.idx;
-    const isDone = currentIdx >= timeline.length;
-    const current = isDone ? null : timeline[currentIdx];
-    if (!current || current.durMins <= 0 || cookState.paused || isDone) return;
-    const elapsed = now - current.absStart.getTime();
-    const total = current.durMins * 60000;
-    const countdown = Math.max(0, total - elapsed);
-    if (countdown <= 0) {
+    // Find first uncompleted/unskipped step whose time has arrived
+    const activeIdx = timeline.findIndex((ev, i) =>
+      !cookState.completed.has(i) && !cookState.skipped.has(i) && ev.absStart.getTime() <= now
+    );
+    if (activeIdx >= 0 && activeIdx !== lastAlertedRef.current) {
+      lastAlertedRef.current = activeIdx;
       if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-      const nextIdx = currentIdx + 1;
-      if (nextIdx < timeline.length) {
-        const nextStep = timeline[nextIdx];
-        setCookState(prev => ({ ...prev, idx: nextIdx, paused: nextStep.autoPause }));
-      } else {
-        setCookState(prev => ({ ...prev, idx: nextIdx }));
-      }
     }
-  }, [now, cookState.paused, cookState.idx, screen, timeline]);
+  }, [now, screen, timeline, cookState.completed, cookState.skipped]);
 
   const toggle = (id) => {
     setSelected(prev => {
@@ -466,37 +458,34 @@ export default function RoastTimer() {
   };
 
   const startCooking = () => {
-    // Recalculate timeline based on NOW as start
     const nowMs = Date.now();
     const firstOffset = computedTimeline[0]?.offsetStart || 0;
     const adjustedServe = nowMs - firstOffset * 60000;
     const tl = generateTimeline([...selected], { weight: meatWeight }, adjustedServe);
     setTimeline(tl);
-    setCookState({ idx: 0, paused: tl[0]?.autoPause || false, pausedAt: null, startedAt: nowMs, offset: 0 });
+    setCookState({ completed: new Set(), skipped: new Set(), manualPause: false });
     setNow(Date.now());
     setScreen("cook");
   };
 
-  const advanceStep = () => {
+  const markStepDone = (idx) => {
     setCookState(prev => {
-      const nextIdx = prev.idx + 1;
-      if (nextIdx >= timeline.length) return { ...prev, idx: nextIdx, paused: false };
-      const nextStep = timeline[nextIdx];
-      // If next step starts in the future, just unpause and let timer run
-      return { ...prev, idx: nextIdx, paused: nextStep.autoPause && nextStep.durMins === 0 };
+      const completed = new Set(prev.completed);
+      completed.add(idx);
+      return { ...prev, completed };
+    });
+  };
+
+  const skipStep = (idx) => {
+    setCookState(prev => {
+      const skipped = new Set(prev.skipped);
+      skipped.add(idx);
+      return { ...prev, skipped };
     });
   };
 
   const togglePause = () => {
-    setCookState(prev => ({ ...prev, paused: !prev.paused }));
-  };
-
-  const markDone = () => {
-    setCookState(prev => {
-      const nextIdx = prev.idx + 1;
-      if (nextIdx >= timeline.length) return { ...prev, idx: nextIdx, paused: false };
-      return { ...prev, idx: nextIdx, paused: false };
-    });
+    setCookState(prev => ({ ...prev, manualPause: !prev.manualPause }));
   };
 
   // ─── SELECTION SCREEN ───────────────────────────────────────────────
@@ -638,27 +627,31 @@ export default function RoastTimer() {
 
   // ─── COOK SCREEN ────────────────────────────────────────────────────
   if (screen === "cook") {
-    const currentIdx = cookState.idx;
-    const isDone = currentIdx >= timeline.length;
-    const current = isDone ? null : timeline[currentIdx];
+    // Derive state from timeline + completed/skipped sets
+    const remaining = timeline.map((ev, i) => ({ ev, i }))
+      .filter(({ i }) => !cookState.completed.has(i) && !cookState.skipped.has(i));
 
-    // Find active background tasks (started but not yet ended)
-    const activeBg = timeline.filter((ev, i) => i < currentIdx && ev.absEnd && ev.absEnd.getTime() > now && ev.durMins > 0);
+    const activeEntry = remaining.find(({ ev }) => ev.absStart.getTime() <= now);
+    const isAllDone = remaining.length === 0;
+    const isWaiting = !activeEntry && !isAllDone;
+    const nextEntry = remaining[0];
 
-    // Next upcoming events
-    const upcoming = timeline.slice(currentIdx + 1, currentIdx + 4);
+    // In-progress: completed bg steps still running
+    const inProgress = timeline.filter((ev, i) =>
+      (cookState.completed.has(i) || cookState.skipped.has(i)) &&
+      ev.isBg && ev.durMins > 0 && ev.absEnd.getTime() > now
+    );
 
-    // Countdown to end of current step
-    let countdown = 0;
-    let progress = 0;
-    if (current && current.durMins > 0) {
-      const elapsed = now - current.absStart.getTime();
-      const total = current.durMins * 60000;
-      countdown = Math.max(0, total - elapsed);
-      progress = Math.min(1, elapsed / total);
-    }
+    // Coming up: remaining steps AFTER the active one
+    const upcomingSteps = activeEntry
+      ? remaining.filter(({ i }) => i > activeEntry.i).slice(0, 5)
+      : remaining.slice(0, 5);
 
-    if (isDone) {
+    // Total progress
+    const totalSteps = timeline.length;
+    const doneCount = cookState.completed.size + cookState.skipped.size;
+
+    if (isAllDone) {
       return (
         <div style={S.app}>
           <style>{GFONTS}</style>
@@ -682,93 +675,143 @@ export default function RoastTimer() {
           <div style={S.cookTopBar}>
             <button onClick={() => { if (confirm("Abandon the roast?")) setScreen("select"); }} style={S.cookBackBtn}>✕</button>
             <div style={S.cookProgress}>
-              Step {currentIdx + 1} / {timeline.length}
+              {doneCount} / {totalSteps} done
             </div>
             <div style={S.cookClock}>{fmt(new Date(now))}</div>
           </div>
 
-          {/* Current step */}
-          <div style={{ ...S.currentStep, borderLeftColor: current.colour }}>
-            <div style={S.currentItemRow}>
-              <span style={{ fontSize: 28 }}>{current.itemIcon}</span>
-              <span style={S.currentItemName}>{current.itemName}</span>
-              <span style={{ ...S.typeBadge, background: current.colour + "33", color: current.colour }}>
-                {TYPE_ICONS[current.type]} {TYPE_LABELS[current.type]}
-              </span>
-            </div>
-            <h2 style={S.currentStepName}>{current.stepName}</h2>
-            <p style={S.currentNote}>{current.note}</p>
-
-            {current.durMins > 0 && (
-              <div style={S.timerSection}>
-                <div style={S.progressBar}>
-                  <div style={{ ...S.progressFill, width: `${progress * 100}%`, background: current.colour }} />
+          {/* ── WAITING STATE ── */}
+          {isWaiting && nextEntry && (
+            <>
+              <div style={S.waitingCard}>
+                <div style={S.waitingIcon}>☕</div>
+                <div style={S.waitingLabel}>Next step in</div>
+                <div style={S.waitingTimer}>
+                  {fmtCountdown(nextEntry.ev.absStart.getTime() - now)}
                 </div>
-                <div style={S.timerDisplay}>{fmtCountdown(countdown)}</div>
-                <div style={S.timerLabel}>{fmtDuration(current.durMins)} total</div>
+                <div style={S.waitingPreview}>
+                  <span style={{ fontSize: 20, marginRight: 8 }}>{nextEntry.ev.itemIcon}</span>
+                  <div>
+                    <div style={{ fontSize: 13, color: C.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>
+                      {nextEntry.ev.itemName}
+                    </div>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: C.text, marginTop: 2 }}>
+                      {nextEntry.ev.stepName}
+                    </div>
+                    <div style={{ fontSize: 13, color: C.textMuted, marginTop: 4, lineHeight: 1.4 }}>
+                      {nextEntry.ev.note}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: C.textMuted, marginTop: 12 }}>
+                  at {fmt(nextEntry.ev.absStart)}
+                </div>
               </div>
-            )}
-          </div>
-
-          {/* Action buttons */}
-          <div style={S.actionRow}>
-            {(cookState.paused || current.autoPause) ? (
-              <button onClick={markDone} style={S.doneBtn}>
-                ✓ Done — Next step
-              </button>
-            ) : (
-              <button onClick={togglePause} style={S.pauseBtn}>
-                ⏸ Pause
-              </button>
-            )}
-            {cookState.paused && !current.autoPause && (
-              <button onClick={togglePause} style={S.resumeBtn}>▶ Resume</button>
-            )}
-            {!cookState.paused && !current.autoPause && (
-              <button onClick={() => { setCookState(prev => ({ ...prev, idx: prev.idx + 1, paused: timeline[prev.idx + 1]?.autoPause || false })); }}
-                style={S.skipBtn}>Skip →</button>
-            )}
-          </div>
-
-          {/* Manual pause */}
-          {!cookState.paused && !current.autoPause && (
-            <div style={{ textAlign: "center", marginTop: 4 }}>
-              <button onClick={togglePause} style={{ ...S.smallLink }}>
-                Need to pause?
-              </button>
-            </div>
+              <div style={S.actionRow}>
+                <button onClick={() => skipStep(nextEntry.i)} style={S.skipBtn}>
+                  Skip this →
+                </button>
+              </div>
+            </>
           )}
 
-          {/* Active background tasks */}
-          {activeBg.length > 0 && (
+          {/* ── ACTIVE STEP ── */}
+          {activeEntry && (() => {
+            const current = activeEntry.ev;
+            const idx = activeEntry.i;
+            let countdown = 0;
+            let progress = 0;
+            if (current.durMins > 0) {
+              const elapsed = now - current.absStart.getTime();
+              const total = current.durMins * 60000;
+              countdown = Math.max(0, total - elapsed);
+              progress = Math.min(1, elapsed / total);
+            }
+            const timerDone = current.durMins > 0 && countdown <= 0;
+
+            return (
+              <>
+                <div style={{ ...S.currentStep, borderLeftColor: current.colour }}>
+                  <div style={S.currentItemRow}>
+                    <span style={{ fontSize: 28 }}>{current.itemIcon}</span>
+                    <span style={S.currentItemName}>{current.itemName}</span>
+                    <span style={{ ...S.typeBadge, background: current.colour + "33", color: current.colour }}>
+                      {TYPE_ICONS[current.type]} {TYPE_LABELS[current.type]}
+                    </span>
+                  </div>
+                  <h2 style={S.currentStepName}>{current.stepName}</h2>
+                  <p style={S.currentNote}>{current.note}</p>
+
+                  {current.durMins > 0 && (
+                    <div style={S.timerSection}>
+                      <div style={S.progressBar}>
+                        <div style={{ ...S.progressFill, width: `${progress * 100}%`, background: timerDone ? C.success : current.colour }} />
+                      </div>
+                      <div style={{ ...S.timerDisplay, color: timerDone ? C.success : C.accent }}>
+                        {timerDone ? "✓ TIME" : fmtCountdown(countdown)}
+                      </div>
+                      <div style={S.timerLabel}>{fmtDuration(current.durMins)} total</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Action buttons */}
+                <div style={S.actionRow}>
+                  <button onClick={() => markStepDone(idx)} style={S.doneBtn}>
+                    ✓ Done
+                  </button>
+                  <button onClick={() => skipStep(idx)} style={S.skipBtn}>
+                    Skip →
+                  </button>
+                </div>
+              </>
+            );
+          })()}
+
+          {/* ── IN PROGRESS ── */}
+          {inProgress.length > 0 && (
             <div style={S.bgSection}>
               <h3 style={S.bgTitle}>🔥 In progress</h3>
-              {activeBg.map(ev => {
+              {inProgress.map(ev => {
                 const remaining = Math.max(0, ev.absEnd.getTime() - now);
+                const done = remaining <= 0;
                 return (
                   <div key={ev.id} style={{ ...S.bgItem, borderLeftColor: ev.colour }}>
                     <span>{ev.itemIcon} {ev.stepName}</span>
-                    <span style={S.bgTimer}>{fmtCountdown(remaining)}</span>
+                    <span style={{ ...S.bgTimer, color: done ? C.success : C.accent }}>
+                      {done ? "✓ Done" : fmtCountdown(remaining)}
+                    </span>
                   </div>
                 );
               })}
             </div>
           )}
 
-          {/* Upcoming */}
-          {upcoming.length > 0 && (
+          {/* ── COMING UP ── */}
+          {upcomingSteps.length > 0 && (
             <div style={S.upSection}>
               <h3 style={S.bgTitle}>Coming up</h3>
-              {upcoming.map(ev => (
-                <div key={ev.id} style={{ ...S.upItem, borderLeftColor: ev.colour }}>
-                  <div style={S.upItemTop}>
-                    <span>{ev.itemIcon} {ev.itemName}</span>
-                    <span style={S.upTime}>{fmt(ev.absStart)}</span>
+              {upcomingSteps.map(({ ev, i }) => {
+                const timeUntil = ev.absStart.getTime() - now;
+                const isReady = timeUntil <= 0;
+                return (
+                  <div key={ev.id} style={{ ...S.upItem, borderLeftColor: ev.colour }}>
+                    <div style={S.upItemTop}>
+                      <span>{ev.itemIcon} {ev.itemName}</span>
+                      <span style={{ ...S.upTime, color: isReady ? C.success : C.accent }}>
+                        {isReady ? "ready now" : `in ${fmtCountdown(timeUntil)}`}
+                      </span>
+                    </div>
+                    <div style={S.upStep}>{ev.stepName}</div>
+                    <div style={S.upMeta}>
+                      <span style={S.upAt}>{fmt(ev.absStart)}</span>
+                      {ev.durMins > 0 && <span style={S.upDur}>{fmtDuration(ev.durMins)}</span>}
+                      {ev.autoPause && <span style={{ ...S.pauseBadge, fontSize: 10 }}>⏸</span>}
+                      {ev.isBg && ev.durMins > 0 && <span style={{ ...S.bgBadge, fontSize: 10 }}>HANDS FREE</span>}
+                    </div>
                   </div>
-                  <div style={S.upStep}>{ev.stepName}</div>
-                  {ev.autoPause && <span style={{ ...S.pauseBadge, fontSize: 10 }}>⏸</span>}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1037,6 +1080,33 @@ const S = {
   },
   upTime: { fontFamily: "'JetBrains Mono'", fontSize: 12, color: C.accent },
   upStep: { fontSize: 14, fontWeight: 500, color: C.text },
+  upMeta: {
+    display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap",
+  },
+  upAt: {
+    fontFamily: "'JetBrains Mono'", fontSize: 11, color: C.textMuted,
+  },
+  upDur: {
+    fontSize: 11, color: C.textMuted, fontFamily: "'JetBrains Mono'",
+  },
+  waitingCard: {
+    background: C.card, borderRadius: 18, padding: "32px 20px",
+    border: `1px solid ${C.border}`, textAlign: "center",
+  },
+  waitingIcon: { fontSize: 40, marginBottom: 8 },
+  waitingLabel: {
+    fontSize: 13, fontWeight: 700, color: C.textMuted, textTransform: "uppercase",
+    letterSpacing: 2, marginBottom: 4,
+  },
+  waitingTimer: {
+    fontFamily: "'JetBrains Mono'", fontSize: 48, fontWeight: 700, color: C.accent,
+    lineHeight: 1.1, letterSpacing: -2,
+  },
+  waitingPreview: {
+    display: "flex", alignItems: "flex-start", gap: 8, textAlign: "left",
+    marginTop: 20, padding: "14px 16px",
+    background: "rgba(255,255,255,0.03)", borderRadius: 12,
+  },
   doneScreen: {
     textAlign: "center", paddingTop: 80,
   },
