@@ -500,15 +500,20 @@ function RoastTimer() {
 
   // Long press handler
   const longPressRef = useRef(null);
+  const lastTapRef = useRef({ id: null, time: 0 });
+
+  const openEditor = (itemId) => {
+    const item = storeItems[itemId];
+    if (item) {
+      setEditingItem({ id: itemId, ...item, steps: item.steps.map((st,i) => ({ ...st, _key: i })), isNew: false });
+      setScreen("edit");
+    }
+  };
+
   const startLongPress = (itemId) => {
     longPressRef.current = setTimeout(() => {
       longPressRef.current = "fired";
-      // Load item into editor
-      const item = storeItems[itemId];
-      if (item) {
-        setEditingItem({ id: itemId, ...item, steps: item.steps.map((st,i) => ({ ...st, _key: i })), isNew: false });
-      }
-      setScreen("edit");
+      openEditor(itemId);
     }, 600);
   };
   const endLongPress = () => {
@@ -517,7 +522,19 @@ function RoastTimer() {
     }
     longPressRef.current = null;
   };
-  const wasLongPress = () => longPressRef.current === "fired";
+  const handleTap = (itemId) => {
+    if (longPressRef.current === "fired") return; // was long press
+    const now = Date.now();
+    if (lastTapRef.current.id === itemId && now - lastTapRef.current.time < 350) {
+      // Double tap → edit
+      lastTapRef.current = { id: null, time: 0 };
+      openEditor(itemId);
+    } else {
+      // Single tap → toggle
+      lastTapRef.current = { id: itemId, time: now };
+      toggle(itemId);
+    }
+  };
 
   const createNewItem = () => {
     const id = "custom_" + Date.now();
@@ -688,7 +705,7 @@ function RoastTimer() {
                   return (
                     <button key={item.id}
                       onPointerDown={() => startLongPress(item.id)}
-                      onPointerUp={() => { endLongPress(); if (!wasLongPress()) toggle(item.id); }}
+                      onPointerUp={() => { endLongPress(); handleTap(item.id); }}
                       onPointerLeave={endLongPress}
                       onContextMenu={e => e.preventDefault()}
                       style={{ ...S.itemCard, ...(isOn ? S.itemCardOn : {}), borderColor: isOn ? (item.colour || storeItems[item.id]?.colour || "#d4883c") : "rgba(255,255,255,0.06)" }}>
@@ -707,7 +724,7 @@ function RoastTimer() {
             + Add custom item
           </button>
           <p style={{ color: C.textMuted, fontSize: 11, textAlign: "center", marginBottom: 16, opacity: 0.6 }}>
-            Long press any item to edit its recipe
+            Double-tap or long press any item to edit its recipe
           </p>
 
           {weightBasedItems.length > 0 && (
