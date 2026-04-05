@@ -18,264 +18,253 @@
 <body>
   <div id="root"></div>
   <script type="text/babel">
-const { useState, useEffect, useRef, useCallback, useMemo } = React;
+const { useState, useEffect, useRef, useMemo } = React;
 
 // ─── RECIPE DATABASE ────────────────────────────────────────────────────
-const MEAT_TYPES = {
-  pork:    { label: "Pork", temp: 180, baseMins: 20, perKgMins: 40, restMins: 20, icon: "🐖" },
-  chicken: { label: "Chicken", temp: 200, baseMins: 20, perKgMins: 50, restMins: 15, icon: "🐔" },
-  beef:    { label: "Beef", temp: 200, baseMins: 20, perKgMins: 40, restMins: 25, icon: "🐄" },
-  lamb:    { label: "Lamb", temp: 190, baseMins: 20, perKgMins: 50, restMins: 20, icon: "🐑" },
-  turkey:  { label: "Turkey", temp: 180, baseMins: 20, perKgMins: 50, restMins: 30, icon: "🦃" },
-};
-
-// Step types: prep, heat, cook, action, rest
-// autoPause: true = timer stops, user must tap Done
-function getMeatSteps(meatType, weightG) {
-  const m = MEAT_TYPES[meatType];
-  const weightKg = weightG / 1000;
-  const totalCook = Math.round(m.baseMins + m.perKgMins * weightKg);
-  const uncoveredTime = Math.min(30, Math.round(totalCook * 0.3));
-  const coveredTime = totalCook - uncoveredTime;
-  return {
-    id: "meat",
-    name: `Roast ${m.label}`,
-    icon: m.icon,
-    colour: "#c45c4c",
-    steps: [
-      { name: `Preheat oven to ${m.temp}°C`, dur: 15, type: "heat", auto: false, bg: true, note: `Set oven to ${m.temp}°C / Gas ${Math.round((m.temp-121)/14)}. Carry on with prep while it heats.` },
-      { name: `Prep ${m.label.toLowerCase()}`, dur: 10, type: "prep", auto: true, note: "Wash, pat dry, score skin if needed, season generously with salt, pepper & herbs." },
-      { name: "Heat roasting pan with oil", dur: 5, type: "heat", auto: false, bg: true, waitBg: true, note: "Put roasting pan with a glug of oil/fat into the hot oven to get smoking hot." },
-      { name: `${m.label} into oven (covered)`, dur: coveredTime, type: "cook", auto: true, bg: true, waitBg: true, note: `Place ${m.label.toLowerCase()} in hot pan, cover loosely with foil. Cook for ~${coveredTime} mins. Baste occasionally if you remember.` },
-      { name: "Remove foil & baste", dur: uncoveredTime, type: "cook", auto: true, bg: true, waitBg: true, note: `Remove foil, baste well, return to oven for final ${uncoveredTime} mins for colour & crispiness.` },
-      { name: "Remove from oven", dur: 0, type: "action", auto: true, waitBg: true, note: `Take ${m.label.toLowerCase()} out. Tent loosely with foil on a warm plate.` },
-      { name: `Rest ${m.label.toLowerCase()}`, dur: m.restMins, type: "rest", auto: false, bg: true, note: `Let it rest — the juices redistribute. Save the pan juices for gravy! Rest for ${m.restMins} mins.` },
-      { name: `Carve & plate`, dur: 5, type: "action", auto: true, waitBg: true, note: "Carve the meat and add to warm plates." },
-    ],
-  };
-}
+// Steps: dur = base mins, perKg = extra mins per kg (for weightBased items)
+// temp = temperature °C (for heat/cook steps)
+// bg = background (cook is free), waitBg = wait for prior bg, auto = auto-pause
 
 const SIDES = {
-  roast_potatoes: {
-    name: "Roast Potatoes",
-    icon: "🥔",
-    colour: "#d4883c",
+  roast_pork: {
+    name: "Roast Pork", icon: "🐖", colour: "#c45c4c", weightBased: true,
     steps: [
-      { name: "Peel & chop potatoes", dur: 10, type: "prep", auto: true, note: "Peel, cut into even chunks, put into cold salted water." },
-      { name: "Parboil potatoes", dur: 12, type: "cook", auto: false, bg: true, note: "Bring to boil, simmer until just soft when poked with a knife — don't let them fall apart." },
-      { name: "Drain & steam dry", dur: 10, type: "rest", auto: false, bg: true, waitBg: true, note: "Drain in colander, cover with a clean tea towel. Let them steam dry — this is the secret to crispy roasties." },
-      { name: "Rough up potatoes", dur: 2, type: "action", auto: true, waitBg: true, note: "Shake the colander or use a fork to rough up the edges. More surface area = more crunch." },
-      { name: "Heat oil in roasting tin", dur: 5, type: "heat", auto: false, bg: true, note: "Get oil/goose fat smoking hot in a roasting tin in the oven." },
-      { name: "Potatoes into hot oil", dur: 0, type: "action", auto: true, waitBg: true, note: "Carefully add potatoes to the hot oil. Turn to coat. Season with salt." },
-      { name: "Roast potatoes", dur: 20, type: "cook", auto: false, bg: true, note: "Roast for 20 mins then turn them." },
-      { name: "Turn potatoes", dur: 20, type: "cook", auto: true, bg: true, waitBg: true, note: "Turn the potatoes and roast for another 20 mins until golden and crispy." },
+      { name: "Preheat oven", dur: 15, type: "heat", temp: 180, auto: false, bg: true, note: "Set oven to 180°C / Gas 4." },
+      { name: "Prep pork", dur: 10, type: "prep", auto: true, note: "Wash, pat dry, score skin if needed, season generously with salt, pepper & herbs." },
+      { name: "Heat roasting pan", dur: 5, type: "heat", temp: 180, auto: false, bg: true, waitBg: true, note: "Pan with oil/fat into the hot oven." },
+      { name: "Pork into oven (covered)", dur: 14, perKg: 28, type: "cook", temp: 180, auto: true, bg: true, waitBg: true, note: "Place pork in hot pan, cover loosely with foil. Baste occasionally." },
+      { name: "Remove foil & baste", dur: 6, perKg: 12, type: "cook", temp: 180, auto: true, bg: true, waitBg: true, note: "Remove foil, baste well, return for colour & crispiness." },
+      { name: "Remove from oven", dur: 0, type: "action", auto: true, waitBg: true, note: "Take pork out. Tent loosely with foil on a warm plate." },
+      { name: "Rest pork", dur: 20, type: "rest", auto: false, bg: true, note: "Let it rest — juices redistribute. Save pan juices for gravy!" },
+      { name: "Carve & plate", dur: 5, type: "action", auto: true, waitBg: true, note: "Carve the meat and add to warm plates." },
     ],
   },
-  yorkshires_big: {
-    name: "Yorkshire Puddings (Big)",
-    icon: "🍞",
-    colour: "#b8860b",
+  roast_chicken: {
+    name: "Roast Chicken", icon: "🐔", colour: "#c4864c", weightBased: true,
     steps: [
-      { name: "Make Yorkshire batter", dur: 5, type: "prep", auto: true, note: "Whisk 4 eggs, 140g plain flour, 200ml milk, pinch of salt. Let batter rest at room temperature." },
-      { name: "Rest Yorkshire batter", dur: 25, type: "rest", auto: false, bg: true, note: "Let the batter rest — this makes them rise better." },
-      { name: "Crank oven to 220°C", dur: 5, type: "heat", auto: true, waitBg: true, bg: true, note: "Turn oven up to 220°C / Gas 7. Put a little oil in each pudding hole." },
-      { name: "Heat oil for Yorkshires", dur: 5, type: "heat", auto: false, bg: true, note: "Oil must be smoking hot before batter goes in." },
-      { name: "Pour batter — DO NOT OPEN OVEN", dur: 25, type: "cook", auto: true, bg: true, waitBg: true, note: "Pour batter into smoking hot oil. Close door. DO NOT open the oven for 25 minutes or they'll collapse!" },
+      { name: "Preheat oven", dur: 15, type: "heat", temp: 200, auto: false, bg: true, note: "Set oven to 200°C / Gas 6." },
+      { name: "Prep chicken", dur: 10, type: "prep", auto: true, note: "Pat dry, stuff cavity with lemon & herbs, season, rub with butter or oil." },
+      { name: "Heat roasting pan", dur: 5, type: "heat", temp: 200, auto: false, bg: true, waitBg: true, note: "Pan with oil into the hot oven." },
+      { name: "Chicken into oven (covered)", dur: 14, perKg: 35, type: "cook", temp: 200, auto: true, bg: true, waitBg: true, note: "Place chicken breast-side up, cover loosely with foil. Baste occasionally." },
+      { name: "Remove foil & baste", dur: 6, perKg: 15, type: "cook", temp: 200, auto: true, bg: true, waitBg: true, note: "Remove foil, baste well. Skin should go golden and crispy." },
+      { name: "Remove from oven", dur: 0, type: "action", auto: true, waitBg: true, note: "Check juices run clear. Tent with foil." },
+      { name: "Rest chicken", dur: 15, type: "rest", auto: false, bg: true, note: "Rest on a warm plate — makes carving easier." },
+      { name: "Carve & plate", dur: 5, type: "action", auto: true, waitBg: true, note: "Carve and add to warm plates." },
     ],
   },
-  yorkshires_small: {
-    name: "Yorkshire Puddings (Small)",
-    icon: "🍞",
-    colour: "#b8860b",
+  roast_beef: {
+    name: "Roast Beef", icon: "🐄", colour: "#8b4c4c", weightBased: true,
     steps: [
-      { name: "Make Yorkshire batter", dur: 5, type: "prep", auto: true, note: "Whisk 3 eggs, 115g plain flour, 175ml milk, pinch of salt." },
-      { name: "Rest Yorkshire batter", dur: 20, type: "rest", auto: false, bg: true, note: "Let the batter rest." },
-      { name: "Heat muffin tin oil to 220°C", dur: 5, type: "heat", auto: true, bg: true, waitBg: true, note: "A little oil in each hole of a muffin tin. Get it smoking hot." },
-      { name: "Pour batter — DO NOT OPEN OVEN", dur: 15, type: "cook", auto: true, bg: true, waitBg: true, note: "Pour batter into smoking hot oil. Close the door. Don't open for 15 minutes!" },
+      { name: "Preheat oven", dur: 15, type: "heat", temp: 200, auto: false, bg: true, note: "Set oven to 200°C / Gas 6." },
+      { name: "Prep beef", dur: 10, type: "prep", auto: true, note: "Bring to room temp. Season aggressively with salt, pepper, mustard powder." },
+      { name: "Heat roasting pan", dur: 5, type: "heat", temp: 200, auto: false, bg: true, waitBg: true, note: "Pan with oil into the hot oven." },
+      { name: "Beef into oven (covered)", dur: 14, perKg: 28, type: "cook", temp: 200, auto: true, bg: true, waitBg: true, note: "Place beef in hot pan, cover loosely with foil." },
+      { name: "Remove foil & baste", dur: 6, perKg: 12, type: "cook", temp: 200, auto: true, bg: true, waitBg: true, note: "Remove foil, baste. Finish uncovered for a good crust." },
+      { name: "Remove from oven", dur: 0, type: "action", auto: true, waitBg: true, note: "Take beef out. Tent loosely with foil." },
+      { name: "Rest beef", dur: 25, type: "rest", auto: false, bg: true, note: "Beef needs a good rest — minimum 25 mins. Save those pan juices!" },
+      { name: "Carve & plate", dur: 5, type: "action", auto: true, waitBg: true, note: "Carve across the grain and add to warm plates." },
     ],
   },
-  stuffing: {
-    name: "Stuffing",
-    icon: "🧅",
-    colour: "#8b7355",
+  roast_lamb: {
+    name: "Roast Lamb", icon: "🐑", colour: "#a05c5c", weightBased: true,
     steps: [
-      { name: "Prep stuffing", dur: 7, type: "prep", auto: true, note: "Mix stuffing — packet or homemade. Shape into balls or press into a dish." },
-      { name: "Cook stuffing", dur: 25, type: "cook", auto: false, bg: true, note: "Bake in oven at 180-190°C until golden on top." },
+      { name: "Preheat oven", dur: 15, type: "heat", temp: 190, auto: false, bg: true, note: "Set oven to 190°C / Gas 5." },
+      { name: "Prep lamb", dur: 10, type: "prep", auto: true, note: "Score fat, stud with garlic & rosemary. Season well." },
+      { name: "Heat roasting pan", dur: 5, type: "heat", temp: 190, auto: false, bg: true, waitBg: true, note: "Pan with oil into the hot oven." },
+      { name: "Lamb into oven (covered)", dur: 14, perKg: 35, type: "cook", temp: 190, auto: true, bg: true, waitBg: true, note: "Place lamb in hot pan, cover loosely with foil." },
+      { name: "Remove foil & baste", dur: 6, perKg: 15, type: "cook", temp: 190, auto: true, bg: true, waitBg: true, note: "Remove foil, baste well, return for colour." },
+      { name: "Remove from oven", dur: 0, type: "action", auto: true, waitBg: true, note: "Take lamb out. Tent loosely with foil." },
+      { name: "Rest lamb", dur: 20, type: "rest", auto: false, bg: true, note: "Let it rest — juices redistribute. Save pan juices for gravy!" },
+      { name: "Carve & plate", dur: 5, type: "action", auto: true, waitBg: true, note: "Carve and add to warm plates." },
     ],
   },
-  roast_veg: {
-    name: "Roasted Carrots & Parsnips",
-    icon: "🥕",
-    colour: "#e08c4a",
+  roast_turkey: {
+    name: "Roast Turkey", icon: "🦃", colour: "#b87c4c", weightBased: true,
     steps: [
-      { name: "Prep carrots & parsnips", dur: 8, type: "prep", auto: true, note: "Peel and cut into batons. Toss with olive oil, honey, balsamic, salt & pepper." },
-      { name: "Roast veg", dur: 30, type: "cook", auto: false, bg: true, note: "Spread on a tray, roast at 190°C. Turn halfway through." },
-    ],
-  },
-  sprouts_bacon: {
-    name: "Brussels Sprouts & Bacon",
-    icon: "🥬",
-    colour: "#6b9e6b",
-    steps: [
-      { name: "Prep sprouts", dur: 5, type: "prep", auto: true, note: "Trim, halve, and cross the bases. Cut bacon into lardons." },
-      { name: "Blanch sprouts", dur: 4, type: "cook", auto: false, bg: true, note: "Boil for 3-4 minutes until just tender. Drain and set aside." },
-      { name: "Fry bacon", dur: 5, type: "cook", auto: false, waitBg: true, note: "Fry bacon lardons until crispy." },
-      { name: "Add sprouts & fry together", dur: 5, type: "cook", auto: true, note: "Add blanched sprouts to the bacon pan. Toss and fry until lightly charred. Season." },
-    ],
-  },
-  gravy: {
-    name: "Gravy",
-    icon: "🫗",
-    colour: "#6b4423",
-    steps: [
-      { name: "Start gravy", dur: 2, type: "action", auto: true, note: "Pour off excess fat from roasting pan, keeping the juices. Put pan on hob." },
-      { name: "Make gravy", dur: 8, type: "cook", auto: false, note: "Add a tbsp flour, stir. Gradually add stock, stirring. Simmer until thickened. Season to taste. Strain if lumpy." },
-    ],
-  },
-  peas: {
-    name: "Peas",
-    icon: "🫛",
-    colour: "#5a8c5a",
-    steps: [
-      { name: "Peas in microwave", dur: 2, type: "cook", auto: false, bg: true, note: "Frozen peas in a microwave-safe bowl, splash of water, cover. 2 mins on high. If doing sweetcorn too, swap them — alternate 2 min bursts so each gets 4 mins total." },
-      { name: "Stir & finish peas", dur: 3, type: "cook", auto: true, bg: true, waitBg: true, note: "Stir, back in for 3 more mins (or alternate with sweetcorn: 1 min peas, 1 min corn, 1 min peas, 30s both together). Drain, butter, season." },
-    ],
-  },
-  sweetcorn: {
-    name: "Sweetcorn",
-    icon: "🌽",
-    colour: "#d4c040",
-    steps: [
-      { name: "Sweetcorn in microwave", dur: 2, type: "cook", auto: false, bg: true, note: "Frozen sweetcorn in a microwave-safe bowl, splash of water, cover. 2 mins on high. If doing peas too, alternate them in the microwave." },
-      { name: "Stir & finish sweetcorn", dur: 2, type: "cook", auto: true, bg: true, waitBg: true, note: "Stir, back in for 1 min, stir, 1 min more. Drain, butter, season. If sharing with peas, 30s together at the end to warm through." },
-    ],
-  },
-  boiled_carrots: {
-    name: "Boiled Carrots",
-    icon: "🥕",
-    colour: "#e08c4a",
-    steps: [
-      { name: "Prep & chop carrots", dur: 5, type: "prep", auto: true, note: "Peel and slice carrots into coins or batons." },
-      { name: "Boil carrots", dur: 10, type: "cook", auto: true, note: "Boil in salted water until tender. Drain, add butter & parsley." },
-    ],
-  },
-  cauliflower_cheese: {
-    name: "Cauliflower Cheese",
-    icon: "🧀",
-    colour: "#d4b44c",
-    steps: [
-      { name: "Prep cauliflower", dur: 5, type: "prep", auto: true, note: "Break into even-sized florets. Discard tough stalk but keep the tender inner bits." },
-      { name: "Boil cauliflower", dur: 6, type: "cook", auto: true, bg: true, note: "Boil in salted water until just tender — don't overdo it, it'll cook more in the oven. Drain well." },
-      { name: "Make cheese sauce", dur: 8, type: "cook", auto: true, waitBg: true, note: "Melt butter, stir in flour, cook 1 min. Gradually add milk, stirring constantly. Simmer until thick. Off heat, stir in grated mature cheddar, mustard powder, salt & pepper." },
-      { name: "Assemble & bake", dur: 20, type: "cook", auto: true, bg: true, note: "Put cauliflower in an oven dish, pour over cheese sauce. Top with extra grated cheese and breadcrumbs if you like. Bake at 190°C until bubbling and golden." },
-    ],
-  },
-  mash_potato: {
-    name: "Mashed Potato",
-    icon: "🥔",
-    colour: "#d4c090",
-    steps: [
-      { name: "Prep potatoes for mash", dur: 8, type: "prep", auto: true, note: "Peel and cut into even chunks." },
-      { name: "Boil potatoes for mash", dur: 15, type: "cook", auto: false, bg: true, note: "Boil in salted water until very tender." },
-      { name: "Drain & mash", dur: 5, type: "action", auto: true, waitBg: true, note: "Drain well. Mash with butter, warm milk, salt & white pepper. Keep warm with a lid on." },
-    ],
-  },
-  mash_sweet_potato: {
-    name: "Sweet Potato Mash",
-    icon: "🍠",
-    colour: "#cc7a3e",
-    steps: [
-      { name: "Prep sweet potatoes", dur: 8, type: "prep", auto: true, note: "Peel and dice sweet potatoes." },
-      { name: "Boil sweet potatoes", dur: 12, type: "cook", auto: false, bg: true, note: "Boil until very soft." },
-      { name: "Mash sweet potatoes", dur: 5, type: "action", auto: true, waitBg: true, note: "Drain and mash with butter, pinch of cinnamon or nutmeg, salt." },
-    ],
-  },
-  dauphinoise: {
-    name: "Dauphinoise Potatoes",
-    icon: "🥔",
-    colour: "#c9a060",
-    steps: [
-      { name: "Prep dauphinoise", dur: 10, type: "prep", auto: true, note: "Peel and thinly slice potatoes (2-3mm — use a mandoline if you have one). Finely slice garlic. Warm cream and milk in a pan with garlic, nutmeg, salt & pepper." },
-      { name: "Layer dauphinoise", dur: 5, type: "action", auto: true, note: "Butter an oven dish. Layer potato slices overlapping, pouring cream mixture between each layer. Press down. Pour remaining cream over the top." },
-      { name: "Bake covered", dur: 30, type: "cook", auto: false, bg: true, note: "Cover with foil, bake at 180°C. The potatoes soften and absorb the cream." },
-      { name: "Uncover & finish", dur: 20, type: "cook", auto: true, bg: true, waitBg: true, note: "Remove foil, top with grated gruyère or cheddar if you like. Bake uncovered until golden and bubbling." },
-    ],
-  },
-  colcannon: {
-    name: "Colcannon",
-    icon: "🥬",
-    colour: "#7a9e6b",
-    steps: [
-      { name: "Prep colcannon veg", dur: 10, type: "prep", auto: true, note: "Peel & chop potatoes. Shred cabbage or kale. Slice spring onions." },
-      { name: "Boil potatoes for colcannon", dur: 15, type: "cook", auto: false, bg: true, note: "Boil potatoes until tender." },
-      { name: "Wilt greens & mash together", dur: 7, type: "action", auto: true, waitBg: true, note: "Cook cabbage/kale until wilted. Drain potatoes, mash with butter & milk. Fold in greens and spring onions." },
-    ],
-  },
-  swede_mash: {
-    name: "Swede Mash",
-    icon: "🟡",
-    colour: "#c9a84c",
-    steps: [
-      { name: "Prep swede", dur: 10, type: "prep", auto: true, note: "Peel and dice swede (it's tough — be careful)." },
-      { name: "Boil swede", dur: 20, type: "cook", auto: false, bg: true, note: "Boil until very soft — swede takes longer than potato." },
-      { name: "Mash swede", dur: 5, type: "action", auto: true, waitBg: true, note: "Drain well and mash with butter, salt, pepper & a pinch of nutmeg." },
-    ],
-  },
-  pigs_in_blankets: {
-    name: "Pigs in Blankets",
-    icon: "🌭",
-    colour: "#b85c4c",
-    steps: [
-      { name: "Wrap pigs in blankets", dur: 5, type: "prep", auto: true, note: "Wrap each chipolata in a half-rasher of streaky bacon." },
-      { name: "Cook pigs in blankets", dur: 25, type: "cook", auto: false, bg: true, note: "Bake at 190°C until bacon is crispy and sausages cooked through. Turn halfway." },
-    ],
-  },
-  apple_sauce: {
-    name: "Apple Sauce",
-    icon: "🍏",
-    colour: "#8cb369",
-    steps: [
-      { name: "Prep apples", dur: 8, type: "prep", auto: true, note: "Peel, core and chop Bramley apples." },
-      { name: "Cook apple sauce", dur: 12, type: "cook", auto: true, note: "Simmer with a splash of water, sugar to taste, until collapsed. Stir and mash. Add a squeeze of lemon." },
+      { name: "Preheat oven", dur: 15, type: "heat", temp: 180, auto: false, bg: true, note: "Set oven to 180°C / Gas 4." },
+      { name: "Prep turkey", dur: 15, type: "prep", auto: true, note: "Pat dry, season inside and out, stuff if desired. Rub with butter, cover breast with bacon." },
+      { name: "Heat roasting pan", dur: 5, type: "heat", temp: 180, auto: false, bg: true, waitBg: true, note: "Large roasting tin with oil into the hot oven." },
+      { name: "Turkey into oven (covered)", dur: 14, perKg: 35, type: "cook", temp: 180, auto: true, bg: true, waitBg: true, note: "Place turkey in tin, cover with foil. Baste every 45 mins." },
+      { name: "Remove foil & baste", dur: 6, perKg: 15, type: "cook", temp: 180, auto: true, bg: true, waitBg: true, note: "Remove foil for final stretch to crisp up skin." },
+      { name: "Remove from oven", dur: 0, type: "action", auto: true, waitBg: true, note: "Check juices run clear at thickest part. Tent with foil." },
+      { name: "Rest turkey", dur: 30, type: "rest", auto: false, bg: true, note: "Turkey needs a long rest — 30 mins min. It'll stay hot." },
+      { name: "Carve & plate", dur: 8, type: "action", auto: true, waitBg: true, note: "Carve the turkey and add to warm plates." },
     ],
   },
   nut_roast: {
-    name: "Nut Roast",
-    icon: "🌰",
-    colour: "#8b6f47",
+    name: "Nut Roast", icon: "🌰", colour: "#8b6f47", weightBased: true,
     steps: [
-      { name: "Preheat oven to 180°C", dur: 15, type: "heat", auto: false, bg: true, note: "Set oven to 180°C / Gas 4. Grease and line a loaf tin." },
-      { name: "Prep nut roast mix", dur: 12, type: "prep", auto: true, note: "Finely chop onion, garlic, celery, mushrooms. Toast and roughly chop mixed nuts (cashews, walnuts, hazelnuts). Grate cheese if using. Mix nuts, breadcrumbs, herbs (sage, thyme), seasoning." },
-      { name: "Sauté veg for nut roast", dur: 8, type: "cook", auto: true, note: "Fry onion, garlic, celery & mushrooms until soft. Add to the nut mixture. Bind with egg (or flax egg for vegan). Mix well — should hold together when pressed." },
-      { name: "Nut roast into oven", dur: 35, type: "cook", auto: true, bg: true, waitBg: true, note: "Press firmly into lined loaf tin. Top with extra nuts or seeds if you like. Bake for 35 mins until firm and golden on top." },
-      { name: "Rest nut roast", dur: 10, type: "rest", auto: false, bg: true, waitBg: true, note: "Let it rest in the tin for 10 mins — it firms up and slices much better." },
-      { name: "Turn out & slice", dur: 3, type: "action", auto: true, waitBg: true, note: "Turn out onto a board, slice into thick portions. Plate up." },
+      { name: "Preheat oven", dur: 15, type: "heat", temp: 180, auto: false, bg: true, note: "Set oven to 180°C / Gas 4. Grease and line a loaf tin." },
+      { name: "Prep nut roast mix", dur: 12, type: "prep", auto: true, note: "Chop onion, garlic, celery, mushrooms. Toast & chop nuts. Mix with breadcrumbs, herbs, seasoning." },
+      { name: "Sauté veg for nut roast", dur: 8, type: "cook", auto: true, note: "Fry veg until soft. Add to nut mixture. Bind with egg (or flax egg for vegan)." },
+      { name: "Nut roast into oven", dur: 20, perKg: 15, type: "cook", temp: 180, auto: true, bg: true, waitBg: true, note: "Press into lined tin. Top with nuts/seeds. Bake until firm and golden." },
+      { name: "Rest nut roast", dur: 10, type: "rest", auto: false, bg: true, waitBg: true, note: "Rest in the tin — firms up and slices better." },
+      { name: "Turn out & slice", dur: 3, type: "action", auto: true, waitBg: true, note: "Turn out, slice into thick portions. Plate up." },
     ],
   },
+  roast_potatoes: { name: "Roast Potatoes", icon: "🥔", colour: "#d4883c", steps: [
+    { name: "Peel & chop potatoes", dur: 10, type: "prep", auto: true, note: "Peel, cut into even chunks, put into cold salted water." },
+    { name: "Parboil potatoes", dur: 12, type: "cook", auto: false, bg: true, note: "Bring to boil, simmer until just soft — don't let them fall apart." },
+    { name: "Drain & steam dry", dur: 10, type: "rest", auto: false, bg: true, waitBg: true, note: "Drain in colander, cover with tea towel. Steam dry — secret to crispy roasties." },
+    { name: "Rough up potatoes", dur: 2, type: "action", auto: true, waitBg: true, note: "Shake colander or fork to rough up edges. More surface = more crunch." },
+    { name: "Heat oil in roasting tin", dur: 5, type: "heat", temp: 200, auto: false, bg: true, note: "Get oil/goose fat smoking hot in a roasting tin." },
+    { name: "Potatoes into hot oil", dur: 0, type: "action", auto: true, waitBg: true, note: "Carefully add potatoes to hot oil. Turn to coat. Season with salt." },
+    { name: "Roast potatoes", dur: 20, type: "cook", temp: 200, auto: false, bg: true, note: "Roast for 20 mins then turn them." },
+    { name: "Turn potatoes", dur: 20, type: "cook", temp: 200, auto: true, bg: true, waitBg: true, note: "Turn and roast another 20 mins until golden and crispy." },
+  ]},
+  yorkshires_big: { name: "Yorkshire Puddings (Big)", icon: "🍞", colour: "#b8860b", steps: [
+    { name: "Make Yorkshire batter", dur: 5, type: "prep", auto: true, note: "Whisk 4 eggs, 140g flour, 200ml milk, pinch of salt." },
+    { name: "Rest Yorkshire batter", dur: 25, type: "rest", auto: false, bg: true, note: "Let batter rest — makes them rise better." },
+    { name: "Crank oven to 220°C", dur: 5, type: "heat", temp: 220, auto: true, waitBg: true, bg: true, note: "Turn oven to 220°C / Gas 7. Oil in each pudding hole." },
+    { name: "Heat oil for Yorkshires", dur: 5, type: "heat", temp: 220, auto: false, bg: true, note: "Oil must be smoking hot before batter goes in." },
+    { name: "Pour batter — DO NOT OPEN OVEN", dur: 25, type: "cook", temp: 220, auto: true, bg: true, waitBg: true, note: "Pour batter into smoking hot oil. DO NOT open oven for 25 minutes!" },
+  ]},
+  yorkshires_small: { name: "Yorkshire Puddings (Small)", icon: "🍞", colour: "#b8860b", steps: [
+    { name: "Make Yorkshire batter", dur: 5, type: "prep", auto: true, note: "Whisk 3 eggs, 115g flour, 175ml milk, pinch of salt." },
+    { name: "Rest Yorkshire batter", dur: 20, type: "rest", auto: false, bg: true, note: "Let batter rest." },
+    { name: "Heat muffin tin oil", dur: 5, type: "heat", temp: 220, auto: true, bg: true, waitBg: true, note: "Oil in each muffin hole. Get it smoking hot." },
+    { name: "Pour batter — DO NOT OPEN OVEN", dur: 15, type: "cook", temp: 220, auto: true, bg: true, waitBg: true, note: "Pour batter in. Don't open for 15 minutes!" },
+  ]},
+  stuffing: { name: "Stuffing", icon: "🧅", colour: "#8b7355", steps: [
+    { name: "Prep stuffing", dur: 7, type: "prep", auto: true, note: "Mix stuffing — packet or homemade. Shape into balls or press into a dish." },
+    { name: "Cook stuffing", dur: 25, type: "cook", temp: 190, auto: false, bg: true, note: "Bake until golden on top." },
+  ]},
+  roast_veg: { name: "Roasted Carrots & Parsnips", icon: "🥕", colour: "#e08c4a", steps: [
+    { name: "Prep carrots & parsnips", dur: 8, type: "prep", auto: true, note: "Peel, cut into batons. Toss with olive oil, honey, balsamic, salt & pepper." },
+    { name: "Roast veg", dur: 30, type: "cook", temp: 190, auto: false, bg: true, note: "Spread on tray, roast. Turn halfway." },
+  ]},
+  sprouts_bacon: { name: "Brussels Sprouts & Bacon", icon: "🥬", colour: "#6b9e6b", steps: [
+    { name: "Prep sprouts", dur: 5, type: "prep", auto: true, note: "Trim, halve, cross bases. Cut bacon into lardons." },
+    { name: "Blanch sprouts", dur: 4, type: "cook", auto: false, bg: true, note: "Boil 3-4 mins until just tender. Drain." },
+    { name: "Fry bacon", dur: 5, type: "cook", auto: false, waitBg: true, note: "Fry lardons until crispy." },
+    { name: "Add sprouts & fry", dur: 5, type: "cook", auto: true, note: "Add sprouts to bacon pan. Toss and fry until charred. Season." },
+  ]},
+  broccoli: { name: "Broccoli", icon: "🥦", colour: "#4a8c4a", steps: [
+    { name: "Prep broccoli", dur: 3, type: "prep", auto: true, note: "Cut into even florets. Peel and slice the stalk too." },
+    { name: "Boil/steam broccoli", dur: 4, type: "cook", auto: true, note: "Boil or steam 3-4 mins until tender with bite. Drain, butter, season." },
+  ]},
+  cabbage: { name: "Cabbage", icon: "🥬", colour: "#5c8c5c", steps: [
+    { name: "Prep cabbage", dur: 5, type: "prep", auto: true, note: "Quarter, remove core, shred finely." },
+    { name: "Cook cabbage", dur: 5, type: "cook", auto: true, note: "Boil 3-4 mins or sauté in butter. Don't overcook — keep some bite." },
+  ]},
+  gravy: { name: "Gravy", icon: "🫗", colour: "#6b4423", steps: [
+    { name: "Start gravy", dur: 2, type: "action", auto: true, note: "Pour off excess fat, keep juices. Pan on hob." },
+    { name: "Make gravy", dur: 8, type: "cook", auto: false, note: "Add flour, stir. Gradually add stock. Simmer until thick. Season. Strain if lumpy." },
+  ]},
+  peas: { name: "Peas", icon: "🫛", colour: "#5a8c5a", steps: [
+    { name: "Peas in microwave", dur: 2, type: "cook", auto: false, bg: true, note: "Frozen peas in bowl, splash of water, cover. 2 mins on high." },
+    { name: "Stir & finish peas", dur: 3, type: "cook", auto: true, bg: true, waitBg: true, note: "Stir, back in for 3 more mins. Drain, butter, season." },
+  ]},
+  sweetcorn: { name: "Sweetcorn", icon: "🌽", colour: "#d4c040", steps: [
+    { name: "Sweetcorn in microwave", dur: 2, type: "cook", auto: false, bg: true, note: "Frozen sweetcorn in bowl, splash of water, cover. 2 mins." },
+    { name: "Stir & finish sweetcorn", dur: 2, type: "cook", auto: true, bg: true, waitBg: true, note: "Stir, 1 min, stir, 1 min. Drain, butter, season." },
+  ]},
+  boiled_carrots: { name: "Boiled Carrots", icon: "🥕", colour: "#e08c4a", steps: [
+    { name: "Prep & chop carrots", dur: 5, type: "prep", auto: true, note: "Peel and slice into coins or batons." },
+    { name: "Boil carrots", dur: 10, type: "cook", auto: true, note: "Boil until tender. Drain, add butter & parsley." },
+  ]},
+  cauliflower_cheese: { name: "Cauliflower Cheese", icon: "🧀", colour: "#d4b44c", steps: [
+    { name: "Prep cauliflower", dur: 5, type: "prep", auto: true, note: "Break into even florets." },
+    { name: "Boil cauliflower", dur: 6, type: "cook", auto: true, bg: true, note: "Boil until just tender. Drain well." },
+    { name: "Make cheese sauce", dur: 8, type: "cook", auto: true, waitBg: true, note: "Melt butter, flour, gradually add milk. Simmer until thick. Add cheddar, mustard, season." },
+    { name: "Assemble & bake", dur: 20, type: "cook", temp: 190, auto: true, bg: true, note: "Cauliflower in dish, pour over sauce. Top with cheese & breadcrumbs. Bake until bubbling." },
+  ]},
+  mash_potato: { name: "Mashed Potato", icon: "🥔", colour: "#d4c090", steps: [
+    { name: "Prep potatoes for mash", dur: 8, type: "prep", auto: true, note: "Peel and cut into even chunks." },
+    { name: "Boil potatoes for mash", dur: 15, type: "cook", auto: false, bg: true, note: "Boil until very tender." },
+    { name: "Drain & mash", dur: 5, type: "action", auto: true, waitBg: true, note: "Drain. Mash with butter, warm milk, salt & white pepper. Keep warm." },
+  ]},
+  mash_sweet_potato: { name: "Sweet Potato Mash", icon: "🍠", colour: "#cc7a3e", steps: [
+    { name: "Prep sweet potatoes", dur: 8, type: "prep", auto: true, note: "Peel and dice." },
+    { name: "Boil sweet potatoes", dur: 12, type: "cook", auto: false, bg: true, note: "Boil until very soft." },
+    { name: "Mash sweet potatoes", dur: 5, type: "action", auto: true, waitBg: true, note: "Drain and mash with butter, cinnamon or nutmeg, salt." },
+  ]},
+  dauphinoise: { name: "Dauphinoise Potatoes", icon: "🥔", colour: "#c9a060", steps: [
+    { name: "Prep dauphinoise", dur: 10, type: "prep", auto: true, note: "Thinly slice potatoes (2-3mm). Warm cream & milk with garlic, nutmeg, salt & pepper." },
+    { name: "Layer dauphinoise", dur: 5, type: "action", auto: true, note: "Butter dish. Layer potatoes with cream between layers. Press down." },
+    { name: "Bake covered", dur: 30, type: "cook", temp: 180, auto: false, bg: true, note: "Cover with foil, bake." },
+    { name: "Uncover & finish", dur: 20, type: "cook", temp: 180, auto: true, bg: true, waitBg: true, note: "Remove foil, top with gruyère. Bake until golden and bubbling." },
+  ]},
+  colcannon: { name: "Colcannon", icon: "🥬", colour: "#7a9e6b", steps: [
+    { name: "Prep colcannon veg", dur: 10, type: "prep", auto: true, note: "Peel & chop potatoes. Shred cabbage/kale. Slice spring onions." },
+    { name: "Boil potatoes", dur: 15, type: "cook", auto: false, bg: true, note: "Boil until tender." },
+    { name: "Wilt greens & mash", dur: 7, type: "action", auto: true, waitBg: true, note: "Cook greens until wilted. Drain potatoes, mash with butter & milk. Fold in greens & spring onions." },
+  ]},
+  carrot_turnip_mash: { name: "Carrot & Turnip Mash", icon: "🥕", colour: "#d4a040", steps: [
+    { name: "Prep carrots & turnip", dur: 10, type: "prep", auto: true, note: "Peel and dice into similar-sized chunks." },
+    { name: "Boil carrots & turnip", dur: 18, type: "cook", auto: false, bg: true, note: "Boil together until very soft." },
+    { name: "Drain & mash", dur: 5, type: "action", auto: true, waitBg: true, note: "Drain well. Mash with butter, salt, pepper & nutmeg." },
+  ]},
+  swede_mash: { name: "Swede Mash", icon: "🟡", colour: "#c9a84c", steps: [
+    { name: "Prep swede", dur: 10, type: "prep", auto: true, note: "Peel and dice (it's tough — careful)." },
+    { name: "Boil swede", dur: 20, type: "cook", auto: false, bg: true, note: "Boil until very soft — takes longer than potato." },
+    { name: "Mash swede", dur: 5, type: "action", auto: true, waitBg: true, note: "Drain well, mash with butter, salt, pepper & nutmeg." },
+  ]},
+  pigs_in_blankets: { name: "Pigs in Blankets", icon: "🌭", colour: "#b85c4c", steps: [
+    { name: "Wrap pigs in blankets", dur: 5, type: "prep", auto: true, note: "Wrap each chipolata in half-rasher of streaky bacon." },
+    { name: "Cook pigs in blankets", dur: 25, type: "cook", temp: 190, auto: false, bg: true, note: "Bake until bacon crispy and sausages cooked. Turn halfway." },
+  ]},
+  apple_sauce: { name: "Apple Sauce", icon: "🍏", colour: "#8cb369", steps: [
+    { name: "Prep apples", dur: 8, type: "prep", auto: true, note: "Peel, core and chop Bramley apples." },
+    { name: "Cook apple sauce", dur: 12, type: "cook", auto: true, note: "Simmer with water, sugar to taste, until collapsed. Stir, mash, squeeze of lemon." },
+  ]},
+  apple_crumble: { name: "Apple Crumble", icon: "🍎", colour: "#c47a4c", steps: [
+    { name: "Prep crumble topping", dur: 8, type: "prep", auto: true, note: "Rub 200g flour, 100g butter until breadcrumbs. Stir in 75g demerara sugar, pinch of cinnamon." },
+    { name: "Prep fruit & assemble", dur: 8, type: "prep", auto: true, note: "Peel, core and slice Bramleys. Toss with sugar, lemon juice, cinnamon. Put fruit in dish, crumble on top. Set aside ready for the oven." },
+    { name: "Crumble into oven", dur: 0, type: "action", auto: true, afterServe: true, note: "Put assembled crumble into the oven now mains are out." },
+    { name: "Bake crumble", dur: 35, type: "cook", temp: 180, auto: false, bg: true, afterServe: true, note: "Bake until golden and bubbling at the edges. Enjoy your mains while it cooks!" },
+  ]},
+  sticky_toffee_pud: { name: "Sticky Toffee Pudding", icon: "🍮", colour: "#8b5e3c", steps: [
+    { name: "Soak dates", dur: 5, type: "prep", auto: true, bg: true, note: "Pour boiling water over chopped dates with bicarb. Let soak." },
+    { name: "Make batter & pour into tin", dur: 10, type: "prep", auto: true, waitBg: true, note: "Cream butter & sugar. Beat in eggs, fold in flour, stir in date mixture. Pour into greased tin. Set aside." },
+    { name: "Pudding into oven", dur: 0, type: "action", auto: true, afterServe: true, note: "Put the pudding tin into the oven now mains are served." },
+    { name: "Bake pudding", dur: 30, type: "cook", temp: 180, auto: false, bg: true, afterServe: true, note: "Bake until risen and firm. Eat your roast!" },
+    { name: "Make toffee sauce", dur: 8, type: "cook", auto: true, afterServe: true, waitBg: true, note: "Melt butter, sugar & cream together. Simmer until thick and toffee-coloured." },
+  ]},
+  bread_butter_pud: { name: "Bread & Butter Pudding", icon: "🍞", colour: "#c9a060", steps: [
+    { name: "Prep & layer pudding", dur: 10, type: "prep", auto: true, note: "Butter bread, cut into triangles. Layer in dish with raisins/sultanas." },
+    { name: "Make custard & soak", dur: 15, type: "rest", auto: false, bg: true, note: "Whisk eggs, sugar, vanilla into warm milk & cream. Pour over bread. Let soak — the longer the better." },
+    { name: "Pudding into oven", dur: 0, type: "action", auto: true, afterServe: true, waitBg: true, note: "Sprinkle with nutmeg & demerara. Into the oven now mains are done." },
+    { name: "Bake pudding", dur: 35, type: "cook", temp: 170, auto: false, bg: true, afterServe: true, note: "Bake until set and golden. Enjoy your roast while it bakes!" },
+  ]},
+  treacle_tart: { name: "Treacle Tart", icon: "🥧", colour: "#d4a040", steps: [
+    { name: "Line tart tin", dur: 10, type: "prep", auto: true, note: "Roll out shortcrust pastry. Line a tart tin, trim edges." },
+    { name: "Chill pastry", dur: 15, type: "rest", auto: false, bg: true, note: "Rest pastry in fridge — stops it shrinking." },
+    { name: "Make filling & assemble", dur: 5, type: "prep", auto: true, waitBg: true, note: "Warm golden syrup, mix with breadcrumbs, lemon zest & juice, beaten egg. Pour into pastry case. Set aside." },
+    { name: "Tart into oven", dur: 0, type: "action", auto: true, afterServe: true, note: "Into the oven now the mains are out." },
+    { name: "Bake treacle tart", dur: 25, type: "cook", temp: 190, auto: false, bg: true, afterServe: true, note: "Bake until golden and just set. Eat your dinner!" },
+  ]},
 };
 
 const CATEGORIES = [
   { key: "mains", label: "Mains", items: [
-    ...Object.keys(MEAT_TYPES).map(k => ({ id: `meat_${k}`, ...MEAT_TYPES[k], isMeat: true, meatKey: k })),
+    { id: "roast_pork", label: "Roast Pork", icon: "🐖" },
+    { id: "roast_chicken", label: "Roast Chicken", icon: "🐔" },
+    { id: "roast_beef", label: "Roast Beef", icon: "🐄" },
+    { id: "roast_lamb", label: "Roast Lamb", icon: "🐑" },
+    { id: "roast_turkey", label: "Roast Turkey", icon: "🦃" },
     { id: "nut_roast", label: "Nut Roast", icon: "🌰" },
   ]},
-  { key: "potatoes", label: "Potatoes & Carbs", items: [
+  { key: "carbs", label: "Carbs", items: [
     { id: "roast_potatoes", label: "Roast Potatoes", icon: "🥔" },
     { id: "mash_potato", label: "Mashed Potato", icon: "🥔" },
     { id: "mash_sweet_potato", label: "Sweet Potato Mash", icon: "🍠" },
     { id: "dauphinoise", label: "Dauphinoise", icon: "🥔" },
     { id: "colcannon", label: "Colcannon", icon: "🥬" },
+    { id: "carrot_turnip_mash", label: "Carrot & Turnip Mash", icon: "🥕" },
     { id: "swede_mash", label: "Swede Mash", icon: "🟡" },
   ]},
-  { key: "veg", label: "Vegetables", items: [
+  { key: "veg", label: "Veg", items: [
     { id: "roast_veg", label: "Roast Carrots & Parsnips", icon: "🥕" },
     { id: "sprouts_bacon", label: "Sprouts & Bacon", icon: "🥬" },
+    { id: "broccoli", label: "Broccoli", icon: "🥦" },
+    { id: "cabbage", label: "Cabbage", icon: "🥬" },
     { id: "peas", label: "Peas", icon: "🫛" },
     { id: "sweetcorn", label: "Sweetcorn", icon: "🌽" },
     { id: "boiled_carrots", label: "Boiled Carrots", icon: "🥕" },
     { id: "cauliflower_cheese", label: "Cauliflower Cheese", icon: "🧀" },
   ]},
-  { key: "extras", label: "The Rest", items: [
+  { key: "sides", label: "Sides", items: [
     { id: "yorkshires_big", label: "Yorkshires (Big)", icon: "🍞" },
     { id: "yorkshires_small", label: "Yorkshires (Small)", icon: "🍞" },
     { id: "stuffing", label: "Stuffing", icon: "🧅" },
@@ -283,88 +272,142 @@ const CATEGORIES = [
     { id: "gravy", label: "Gravy", icon: "🫗" },
     { id: "apple_sauce", label: "Apple Sauce", icon: "🍏" },
   ]},
+  { key: "dessert", label: "Dessert", items: [
+    { id: "apple_crumble", label: "Apple Crumble", icon: "🍎" },
+    { id: "sticky_toffee_pud", label: "Sticky Toffee Pudding", icon: "🍮" },
+    { id: "bread_butter_pud", label: "Bread & Butter Pud", icon: "🍞" },
+    { id: "treacle_tart", label: "Treacle Tart", icon: "🥧" },
+  ]},
 ];
 
 // ─── TIMELINE GENERATION ────────────────────────────────────────────────
 
-// Calculate real offsets within an item, accounting for concurrency.
-// bg steps run in background (cook is free). waitBg steps must wait for prior bg tasks.
 function calcItemOffsets(steps) {
-  let activeClock = 0; // when the cook is next free (mins)
-  let bgClock = 0;     // when all background tasks are done (mins)
+  let activeClock = 0;
+  let bgClock = 0;
   const result = [];
-
   for (const step of steps) {
     let start = activeClock;
-
-    // If this step depends on background tasks finishing first
-    if (step.waitBg) {
-      start = Math.max(start, bgClock);
-    }
-
+    if (step.waitBg) start = Math.max(start, bgClock);
     const end = start + step.dur;
     result.push({ ...step, calcStart: start, calcEnd: end });
-
-    if (step.bg) {
-      // Background: track when it finishes, but cook is free immediately
-      bgClock = Math.max(bgClock, end);
-      // Don't advance activeClock — cook can do next step now
-    } else {
-      activeClock = end;
-    }
+    if (step.bg) { bgClock = Math.max(bgClock, end); }
+    else { activeClock = end; }
   }
-
   return result;
 }
 
-function generateTimeline(selectedIds, meatConfig, servingTimeMs) {
-  const items = [];
+function generateTimeline(selectedIds, itemWeights, servingTimeMs, allItems) {
+  const dessertPrepEvents = [];
+  const mainEvents = [];
+  const postServeEvents = [];
+  let hasPostServe = false;
 
   for (const id of selectedIds) {
-    if (id.startsWith("meat_")) {
-      const meatKey = id.replace("meat_", "");
-      items.push(getMeatSteps(meatKey, meatConfig.weight || 1500));
-    } else if (SIDES[id]) {
-      items.push({ id, ...SIDES[id] });
-    }
-  }
+    let src = allItems[id];
+    if (!src) continue;
+    const weightKg = (src.weightBased ? (itemWeights[id] || 1500) : 1500) / 1000;
+    const allSteps = src.steps.map((s, i) => ({
+      ...s, _origIdx: i,
+      dur: s.dur + (src.weightBased && s.perKg ? Math.round(s.perKg * weightKg) : 0),
+    }));
+    const meta = { id, name: src.name, icon: src.icon, colour: src.colour };
+    const preSteps = allSteps.filter(s => !s.afterServe);
+    const postSteps = allSteps.filter(s => s.afterServe);
+    const isDessertItem = postSteps.length > 0;
 
-  const allEvents = [];
-
-  for (const item of items) {
-    const stepsWithOffsets = calcItemOffsets(item.steps);
-    const totalTime = Math.max(...stepsWithOffsets.map(s => s.calcEnd));
-
-    for (let i = 0; i < stepsWithOffsets.length; i++) {
-      const step = stepsWithOffsets[i];
-      allEvents.push({
-        id: `${item.id}_${i}`,
-        itemId: item.id,
-        itemName: item.name,
-        itemIcon: item.icon,
-        colour: item.colour,
-        stepName: step.name,
-        note: step.note,
-        type: step.type,
-        autoPause: step.auto,
-        isBg: !!step.bg,
-        offsetStart: step.calcStart - totalTime,
-        offsetEnd: step.calcEnd - totalTime,
+    // Pre-serve steps
+    if (preSteps.length > 0) {
+      const offsets = calcItemOffsets(preSteps);
+      const totalTime = Math.max(...offsets.map(s => s.calcEnd));
+      const events = offsets.map(step => ({
+        id: `${meta.id}_${step._origIdx}`, ...meta,
+        stepName: step.name, note: step.note, type: step.type,
+        autoPause: step.auto, isBg: !!step.bg, temp: step.temp,
+        offsetStart: step.calcStart - totalTime, offsetEnd: step.calcEnd - totalTime,
         durMins: step.dur,
+      }));
+      // Dessert items go in a separate prep phase before main cooking
+      if (isDessertItem) {
+        dessertPrepEvents.push(...events);
+      } else {
+        mainEvents.push(...events);
+      }
+    }
+
+    // Post-serve steps (dessert baking)
+    if (postSteps.length > 0) {
+      hasPostServe = true;
+      const offsets = calcItemOffsets(postSteps);
+      offsets.forEach(step => {
+        postServeEvents.push({
+          id: `${meta.id}_${step._origIdx}`, ...meta,
+          stepName: step.name, note: step.note, type: step.type,
+          autoPause: step.auto, isBg: !!step.bg, temp: step.temp, isPostServe: true,
+          offsetStart: step.calcStart, offsetEnd: step.calcEnd,
+          durMins: step.dur,
+        });
       });
     }
   }
 
-  allEvents.sort((a, b) => a.offsetStart - b.offsetStart);
+  mainEvents.sort((a, b) => a.offsetStart - b.offsetStart);
+  postServeEvents.sort((a, b) => a.offsetStart - b.offsetStart);
 
-  // Convert offsets to absolute times
-  return allEvents.map(e => ({
+  // Shift dessert prep to happen BEFORE the main cooking phase
+  if (dessertPrepEvents.length > 0) {
+    dessertPrepEvents.sort((a, b) => a.offsetStart - b.offsetStart);
+    const earliestMain = mainEvents.length > 0 ? mainEvents[0].offsetStart : 0;
+    // Dessert prep ends where main cooking begins
+    const dessertPrepDuration = -(dessertPrepEvents[0].offsetStart); // total span
+    const dessertShift = earliestMain - dessertPrepDuration;
+    dessertPrepEvents.forEach(e => {
+      // Shift: dessert offsets are already negative (e.g. -16 to 0), 
+      // add dessertShift to push them earlier
+      e.offsetStart += dessertShift;
+      e.offsetEnd += dessertShift;
+    });
+  }
+
+  // Combine: dessert prep → START COOKING → mains → SERVE → post-serve → DESSERT READY
+  const combined = [];
+
+  if (dessertPrepEvents.length > 0) {
+    combined.push(...dessertPrepEvents);
+    const mainStart = mainEvents.length > 0 ? mainEvents[0].offsetStart : 0;
+    combined.push({
+      id: "_dessert_prepped", stepName: "✅ DESSERT PREPPED", note: "Set aside and ready for the oven later. Now let's cook the roast!",
+      type: "action", autoPause: true, isBg: false, isServeMarker: true, colour: "#c47a4c",
+      itemName: "", itemIcon: "✅", offsetStart: mainStart, offsetEnd: mainStart, durMins: 0,
+    });
+  }
+
+  combined.push(...mainEvents);
+
+  combined.push({
+    id: "_serve_mains", stepName: "🍽️ SERVE MAINS!", 
+    note: hasPostServe ? "Get dessert in the oven, sit down, and enjoy your roast." : "Sit down and enjoy your roast dinner!",
+    type: "action", autoPause: true, isBg: false, isServeMarker: true, colour: "#d4883c",
+    itemName: "", itemIcon: "🍽️", offsetStart: 0, offsetEnd: 0, durMins: 0,
+  });
+
+  if (hasPostServe) {
+    combined.push(...postServeEvents);
+    const lastPost = postServeEvents[postServeEvents.length - 1];
+    const dessertReady = lastPost ? lastPost.offsetEnd : 0;
+    combined.push({
+      id: "_serve_dessert", stepName: "🍰 DESSERT IS READY!", note: "Take it out, plate up, and enjoy!",
+      type: "action", autoPause: true, isBg: false, isServeMarker: true, colour: "#c47a4c",
+      itemName: "", itemIcon: "🍰", offsetStart: dessertReady, offsetEnd: dessertReady, durMins: 0,
+    });
+  }
+
+  return combined.map(e => ({
     ...e,
     absStart: new Date(servingTimeMs + e.offsetStart * 60000),
     absEnd: new Date(servingTimeMs + e.offsetEnd * 60000),
   }));
 }
-
 // ─── UTILITIES ──────────────────────────────────────────────────────────
 
 function fmt(d) {
@@ -396,7 +439,7 @@ const TYPE_ICONS = { prep: "🔪", heat: "🔥", cook: "⏲️", action: "👋",
 function RoastTimer() {
   const [screen, setScreen] = useState("select");
   const [selected, setSelected] = useState(new Set());
-  const [meatWeight, setMeatWeight] = useState(1500);
+  const [itemWeights, setItemWeights] = useState({});
   const [serveHour, setServeHour] = useState(() => {
     const now = new Date();
     const h = now.getHours();
@@ -409,7 +452,125 @@ function RoastTimer() {
   const timerRef = useRef(null);
   const wakeLockRef = useRef(null);
 
-  const hasMeat = [...selected].some(s => s.startsWith("meat_"));
+  // ── Single-source item store ──
+  // On first load, seed with all built-in recipes. After that, store IS the data.
+  const STORE_VERSION = 2;
+  const [store, setStore] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem("roast_data"));
+      if (s && s.v === STORE_VERSION) return s;
+    } catch {}
+    // Seed: copy all SIDES into store with category field
+    const seeded = {};
+    for (const cat of CATEGORIES) {
+      for (const entry of cat.items) {
+        if (SIDES[entry.id]) {
+          seeded[entry.id] = { ...SIDES[entry.id], category: cat.key };
+        }
+      }
+    }
+    return { v: STORE_VERSION, items: seeded, categories: [] };
+  });
+  const [editingItem, setEditingItem] = useState(null);
+  const [dragIdx, setDragIdx] = useState(null);
+
+  const storeItems = store.items;
+  const customCategories = store.categories;
+
+  // Persist
+  useEffect(() => {
+    try { localStorage.setItem("roast_data", JSON.stringify(store)); } catch {}
+  }, [store]);
+
+  // All category definitions (built-in + custom)
+  const allCategories = useMemo(() => [
+    ...CATEGORIES.map(c => ({ key: c.key, label: c.label })),
+    ...customCategories.map(c => ({ key: c.key, label: c.label, isCustom: true })),
+  ], [customCategories]);
+
+  // Build display categories from store items
+  const mergedCategories = useMemo(() => {
+    const cats = allCategories.map(c => ({ ...c, items: [] }));
+    Object.entries(storeItems).forEach(([id, item]) => {
+      const cat = cats.find(c => c.key === item.category);
+      if (cat) cat.items.push({ id, label: item.name, icon: item.icon, colour: item.colour });
+    });
+    return cats.filter(c => c.items.length > 0);
+  }, [allCategories, storeItems]);
+
+  // Long press handler
+  const longPressRef = useRef(null);
+  const startLongPress = (itemId) => {
+    longPressRef.current = setTimeout(() => {
+      longPressRef.current = "fired";
+      // Load item into editor
+      const item = storeItems[itemId];
+      if (item) {
+        setEditingItem({ id: itemId, ...item, steps: item.steps.map((st,i) => ({ ...st, _key: i })), isNew: false });
+      }
+      setScreen("edit");
+    }, 600);
+  };
+  const endLongPress = () => {
+    if (longPressRef.current && longPressRef.current !== "fired") {
+      clearTimeout(longPressRef.current);
+    }
+    longPressRef.current = null;
+  };
+  const wasLongPress = () => longPressRef.current === "fired";
+
+  const createNewItem = () => {
+    const id = "custom_" + Date.now();
+    setEditingItem({
+      id, name: "", icon: "🍽️", colour: "#d4883c", category: "sides",
+      steps: [], isNew: true,
+    });
+    setScreen("edit");
+  };
+
+  const saveEditingItem = () => {
+    if (!editingItem || !editingItem.name.trim()) return;
+    const { id, isNew, ...data } = editingItem;
+    const clean = { ...data, steps: data.steps.map(({ _key, ...rest }) => rest) };
+    setStore(prev => ({ ...prev, items: { ...prev.items, [id]: clean } }));
+    setEditingItem(null);
+    setScreen("select");
+  };
+
+  const deleteEditingItem = () => {
+    if (!editingItem) return;
+    const id = editingItem.id;
+    setStore(prev => {
+      const items = { ...prev.items };
+      delete items[id];
+      return { ...prev, items };
+    });
+    setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
+    setEditingItem(null);
+    setScreen("select");
+  };
+
+  const saveAsNew = () => {
+    if (!editingItem || !editingItem.name.trim()) return;
+    const newId = "custom_" + Date.now();
+    const { id, isNew, ...data } = editingItem;
+    const clean = { ...data, steps: data.steps.map(({ _key, ...rest }) => rest) };
+    setStore(prev => ({ ...prev, items: { ...prev.items, [newId]: clean } }));
+    setEditingItem(null);
+    setScreen("select");
+  };
+
+  const weightBasedItems = useMemo(() => {
+    return [...selected].filter(s => {
+      const item = storeItems[s];
+      return item && item.weightBased;
+    }).map(s => {
+      const item = storeItems[s];
+      return { id: s, name: item.name, icon: item.icon };
+    });
+  }, [selected, storeItems]);
+  const getWeight = (id) => itemWeights[id] || 1500;
+  const setWeight = (id, w) => setItemWeights(prev => ({ ...prev, [id]: w }));
 
   const servingTime = useMemo(() => {
     const d = new Date();
@@ -420,11 +581,13 @@ function RoastTimer() {
 
   const computedTimeline = useMemo(() => {
     if (selected.size === 0) return [];
-    return generateTimeline([...selected], { weight: meatWeight }, servingTime);
-  }, [selected, meatWeight, servingTime]);
+    return generateTimeline([...selected], itemWeights, servingTime, storeItems);
+  }, [selected, itemWeights, servingTime, storeItems]);
 
   const startTime = computedTimeline.length > 0 ? computedTimeline[0].absStart : null;
   const totalMinsBefore = computedTimeline.length > 0 ? -computedTimeline[0].offsetStart : 0;
+  const lastEvent = computedTimeline.length > 0 ? computedTimeline[computedTimeline.length - 1] : null;
+  const hasDessertPhase = computedTimeline.some(e => e.isPostServe);
 
   // Timer tick
   useEffect(() => {
@@ -460,10 +623,6 @@ function RoastTimer() {
   const toggle = (id) => {
     setSelected(prev => {
       const next = new Set(prev);
-      // If selecting a meat, deselect other meats
-      if (id.startsWith("meat_")) {
-        [...next].filter(x => x.startsWith("meat_")).forEach(x => next.delete(x));
-      }
       // Yorkshire mutual exclusion
       if (id === "yorkshires_big") next.delete("yorkshires_small");
       if (id === "yorkshires_small") next.delete("yorkshires_big");
@@ -481,7 +640,7 @@ function RoastTimer() {
     const nowMs = Date.now();
     const firstOffset = computedTimeline[0]?.offsetStart || 0;
     const adjustedServe = nowMs - firstOffset * 60000;
-    const tl = generateTimeline([...selected], { weight: meatWeight }, adjustedServe);
+    const tl = generateTimeline([...selected], itemWeights, adjustedServe, storeItems);
     setTimeline(tl);
     setCookState({ completed: new Set(), skipped: new Set(), manualPause: false });
     setNow(Date.now());
@@ -519,16 +678,20 @@ function RoastTimer() {
             <p style={S.subtitle}>What's on the menu?</p>
           </div>
 
-          {CATEGORIES.map(cat => (
+          {mergedCategories.map(cat => (
             <div key={cat.key} style={S.catSection}>
               <h2 style={S.catLabel}>{cat.label}</h2>
               <div style={S.grid}>
                 {cat.items.map(item => {
-                  const id = item.id || item.meatKey;
+                  const id = item.id;
                   const isOn = selected.has(item.id);
                   return (
-                    <button key={item.id} onClick={() => toggle(item.id)}
-                      style={{ ...S.itemCard, ...(isOn ? S.itemCardOn : {}), borderColor: isOn ? (item.colour || SIDES[item.id]?.colour || "#d4883c") : "rgba(255,255,255,0.06)" }}>
+                    <button key={item.id}
+                      onPointerDown={() => startLongPress(item.id)}
+                      onPointerUp={() => { endLongPress(); if (!wasLongPress()) toggle(item.id); }}
+                      onPointerLeave={endLongPress}
+                      onContextMenu={e => e.preventDefault()}
+                      style={{ ...S.itemCard, ...(isOn ? S.itemCardOn : {}), borderColor: isOn ? (item.colour || storeItems[item.id]?.colour || "#d4883c") : "rgba(255,255,255,0.06)" }}>
                       <span style={S.itemIcon}>{item.icon}</span>
                       <span style={S.itemLabel}>{item.label}</span>
                       {isOn && <span style={S.checkmark}>✓</span>}
@@ -539,22 +702,38 @@ function RoastTimer() {
             </div>
           ))}
 
-          {hasMeat && (
+          {/* Add custom item */}
+          <button onClick={createNewItem} style={S.addBtn}>
+            + Add custom item
+          </button>
+          <p style={{ color: C.textMuted, fontSize: 11, textAlign: "center", marginBottom: 16, opacity: 0.6 }}>
+            Long press any item to edit its recipe
+          </p>
+
+          {weightBasedItems.length > 0 && (
             <div style={S.configBox}>
-              <label style={S.configLabel}>Meat weight</label>
-              <div style={S.weightRow}>
-                {[1000, 1500, 2000, 2500, 3000, 4000, 5000].map(w => (
-                  <button key={w} onClick={() => setMeatWeight(w)}
-                    style={{ ...S.weightBtn, ...(meatWeight === w ? S.weightBtnOn : {}) }}>
-                    {w >= 1000 ? `${w / 1000}kg` : `${w}g`}
-                  </button>
-                ))}
-              </div>
-              <div style={{marginTop: 8, display: 'flex', alignItems: 'center', gap: 8}}>
-                <label style={{...S.configLabel, margin:0, fontSize: 13}}>Custom (g):</label>
-                <input type="number" value={meatWeight} onChange={e => setMeatWeight(Math.max(100, +e.target.value || 0))}
-                  style={S.numInput} />
-              </div>
+              <label style={S.configLabel}>Weights</label>
+              {weightBasedItems.map(wb => (
+                <div key={wb.id} style={{ marginBottom: weightBasedItems.length > 1 ? 14 : 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 6 }}>
+                    {wb.icon} {wb.name}
+                  </div>
+                  <div style={S.weightRow}>
+                    {[750, 1000, 1500, 2000, 2500, 3000, 4000, 5000].map(w => (
+                      <button key={w} onClick={e => { setWeight(wb.id, w); e.target.blur(); }}
+                        style={{ ...S.weightBtn, ...(getWeight(wb.id) === w ? S.weightBtnOn : {}) }}>
+                        {w >= 1000 ? `${w / 1000}kg` : `${w}g`}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{marginTop: 6, display: 'flex', alignItems: 'center', gap: 8}}>
+                    <label style={{...S.configLabel, margin:0, fontSize: 12}}>Custom (g):</label>
+                    <input type="number" value={getWeight(wb.id)} onChange={e => setWeight(wb.id, +e.target.value || 0)}
+                      onBlur={e => { if (getWeight(wb.id) < 100) setWeight(wb.id, 100); }}
+                      style={S.numInput} />
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -580,6 +759,250 @@ function RoastTimer() {
     );
   }
 
+  // ─── EDIT SCREEN ──────────────────────────────────────────────────
+  if (screen === "edit" && editingItem) {
+    const ei = editingItem;
+    const updateEI = (patch) => setEditingItem(prev => ({ ...prev, ...patch }));
+    const updateStep = (idx, patch) => {
+      const steps = [...ei.steps];
+      steps[idx] = { ...steps[idx], ...patch };
+      updateEI({ steps });
+    };
+    const addStep = () => {
+      updateEI({ steps: [...ei.steps, { name: "", dur: 5, type: "cook", auto: false, bg: false, waitBg: false, note: "", _key: Date.now() }] });
+    };
+    const removeStep = (idx) => {
+      updateEI({ steps: ei.steps.filter((_, i) => i !== idx) });
+    };
+    const moveStep = (from, to) => {
+      if (to < 0 || to >= ei.steps.length) return;
+      const steps = [...ei.steps];
+      const [moved] = steps.splice(from, 1);
+      steps.splice(to, 0, moved);
+      updateEI({ steps });
+      setDragIdx(to);
+    };
+
+    const EMOJIS = ["🍽️","🥘","🫕","🥗","🍲","🥧","🧆","🥙","🌮","🫔","🥪","🧇","🥞","🍕","🫠","🥐","🍗","🥩","🐟","🦐","🧈","🥚","🫘","🍄","🌶️","🧄","🧅","🌽","🥦","🫑","🥕","🥔","🍠","🥬","🫛","🌰","🧀","🍏","🍋","🫐","🍞","🥖","🍰","🍮","🫗","🌭","🍺","☕"];
+    const COLOURS = ["#c45c4c","#d4883c","#e08c4a","#d4b44c","#d4c040","#c9a060","#cc7a3e","#8cb369","#6b9e6b","#5a8c5a","#7a9e6b","#b8860b","#8b7355","#8b6f47","#6b4423","#b85c4c","#d4c090","#c9a84c"];
+
+    return (
+      <div style={S.app}>
+        <style>{GFONTS}</style>
+        <div style={S.container}>
+          <button onClick={() => { setEditingItem(null); setScreen("select"); }} style={S.backBtn}>← Cancel</button>
+          <div style={S.header}>
+            <h1 style={S.title}>{ei.isNew ? "New Item" : "Edit Item"}</h1>
+          </div>
+
+          {/* Name & Icon */}
+          <div style={S.configBox}>
+            <label style={S.configLabel}>Name</label>
+            <input type="text" value={ei.name} onChange={e => updateEI({ name: e.target.value })}
+              placeholder="e.g. Honey-Glazed Parsnips"
+              style={S.editInput} />
+          </div>
+
+          <div style={S.configBox}>
+            <label style={S.configLabel}>Icon</label>
+            <div style={S.emojiGrid}>
+              {EMOJIS.map(em => (
+                <button key={em} onClick={() => updateEI({ icon: em })}
+                  style={{ ...S.emojiBtn, ...(ei.icon === em ? { background: "rgba(255,255,255,0.15)", transform: "scale(1.2)" } : {}) }}>
+                  {em}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={S.configBox}>
+            <label style={S.configLabel}>Colour</label>
+            <div style={S.colourGrid}>
+              {COLOURS.map(c => (
+                <button key={c} onClick={() => updateEI({ colour: c })}
+                  style={{ ...S.colourBtn, background: c, ...(ei.colour === c ? { outline: "2px solid #fff", outlineOffset: 2, transform: "scale(1.15)" } : {}) }} />
+              ))}
+            </div>
+          </div>
+
+          <div style={S.configBox}>
+            <label style={S.configLabel}>Category</label>
+            <div style={S.weightRow}>
+              {allCategories.map(c => (
+                <button key={c.key} onClick={() => updateEI({ category: c.key })}
+                  style={{ ...S.weightBtn, ...(ei.category === c.key ? S.weightBtnOn : {}) }}>
+                  {c.label}
+                </button>
+              ))}
+              {ei.addingCategory ? (
+                <input type="text" autoFocus placeholder="Category name..."
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && e.target.value.trim()) {
+                      const name = e.target.value.trim();
+                      const key = "cat_" + name.toLowerCase().replace(/\s+/g, "_");
+                      if (!allCategories.find(c => c.key === key)) {
+                        setStore(prev => ({ ...prev, categories: [...prev.categories, { key, label: name }] }));
+                      }
+                      updateEI({ category: key, addingCategory: false });
+                    } else if (e.key === "Escape") {
+                      updateEI({ addingCategory: false });
+                    }
+                  }}
+                  onBlur={e => {
+                    const name = e.target.value.trim();
+                    if (name) {
+                      const key = "cat_" + name.toLowerCase().replace(/\s+/g, "_");
+                      if (!allCategories.find(c => c.key === key)) {
+                        setStore(prev => ({ ...prev, categories: [...prev.categories, { key, label: name }] }));
+                      }
+                      updateEI({ category: key, addingCategory: false });
+                    } else {
+                      updateEI({ addingCategory: false });
+                    }
+                  }}
+                  style={{ ...S.editInput, width: 120, padding: "8px 10px", fontSize: 13 }} />
+              ) : (
+                <button onClick={() => updateEI({ addingCategory: true })}
+                  style={{ ...S.weightBtn, color: C.accent, borderColor: C.accent + "44" }}>
+                  + Add
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div style={S.configBox}>
+            <label style={S.flagLabel}>
+              <input type="checkbox" checked={!!ei.weightBased} onChange={e => updateEI({ weightBased: e.target.checked })} />
+              <span style={S.configLabel}>Weight-based timing (cook X + X per kg)</span>
+            </label>
+          </div>
+
+          {/* Steps editor */}
+          <div style={{ ...S.configBox, padding: "18px 12px" }}>
+            <label style={S.configLabel}>Cooking Steps</label>
+            {ei.steps.map((step, idx) => (
+              <div key={step._key || idx}
+                draggable
+                onDragStart={() => setDragIdx(idx)}
+                onDragOver={e => { e.preventDefault(); if (dragIdx !== null && dragIdx !== idx) moveStep(dragIdx, idx); }}
+                onDragEnd={() => setDragIdx(null)}
+                style={{ ...S.stepCard, ...(dragIdx === idx ? { opacity: 0.6, border: `2px dashed ${C.accent}` } : {}) }}>
+                {/* Drag handle + step number */}
+                <div style={S.stepTopRow}>
+                  <span style={S.dragHandle} onTouchStart={() => setDragIdx(idx)}>⠿</span>
+                  <span style={S.stepNum}>Step {idx + 1}</span>
+                  <button onClick={() => removeStep(idx)} style={S.stepDeleteBtn}>✕</button>
+                </div>
+
+                {/* Step name */}
+                <input type="text" value={step.name} onChange={e => updateStep(idx, { name: e.target.value })}
+                  placeholder="Step name" style={{ ...S.editInput, marginBottom: 8 }} />
+
+                {/* Type + Duration row */}
+                <div style={S.stepRow}>
+                  <select value={step.type} onChange={e => updateStep(idx, { type: e.target.value })}
+                    style={S.editSelect}>
+                    <option value="prep">🔪 Prep</option>
+                    <option value="heat">🔥 Heat</option>
+                    <option value="cook">⏲️ Cook</option>
+                    <option value="action">👋 Action</option>
+                    <option value="rest">😴 Rest</option>
+                  </select>
+                  <div style={S.durRow}>
+                    <button onClick={() => updateStep(idx, { dur: Math.max(0, step.dur - 1) })} style={S.durBtn}>−</button>
+                    <input type="number" value={step.dur} onChange={e => updateStep(idx, { dur: Math.max(0, +e.target.value || 0) })}
+                      style={S.durInput} />
+                    <button onClick={() => updateStep(idx, { dur: step.dur + 1 })} style={S.durBtn}>+</button>
+                    <span style={S.durLabel}>min</span>
+                  </div>
+                  {/* Temperature for heat/cook */}
+                  {(step.type === "heat" || step.type === "cook") && (
+                    <div style={S.durRow}>
+                      <input type="number" value={step.temp || ""} onChange={e => updateStep(idx, { temp: +e.target.value || 0 })}
+                        placeholder="°C" style={{ ...S.durInput, width: 55 }} />
+                      <span style={S.durLabel}>°C</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Per kg (for weight-based items, cook steps only) */}
+                {ei.weightBased && step.type === "cook" && (
+                  <div style={{ ...S.stepRow, marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, color: C.textMuted }}>Extra per kg:</span>
+                    <div style={S.durRow}>
+                      <input type="number" value={step.perKg || 0} onChange={e => updateStep(idx, { perKg: Math.max(0, +e.target.value || 0) })}
+                        style={{ ...S.durInput, width: 55 }} />
+                      <span style={S.durLabel}>min/kg</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Flags */}
+                <div style={S.stepFlags}>
+                  <label style={S.flagLabel}>
+                    <input type="checkbox" checked={!!step.bg} onChange={e => updateStep(idx, { bg: e.target.checked })} />
+                    <span>Hands free</span>
+                  </label>
+                  <label style={S.flagLabel}>
+                    <input type="checkbox" checked={!!step.waitBg} onChange={e => updateStep(idx, { waitBg: e.target.checked })} />
+                    <span>Wait for prev</span>
+                  </label>
+                  <label style={S.flagLabel}>
+                    <input type="checkbox" checked={!!step.auto} onChange={e => updateStep(idx, { auto: e.target.checked })} />
+                    <span>Auto-pause</span>
+                  </label>
+                  <label style={S.flagLabel}>
+                    <input type="checkbox" checked={!!step.afterServe} onChange={e => updateStep(idx, { afterServe: e.target.checked })} />
+                    <span>After mains</span>
+                  </label>
+                </div>
+
+                {/* Note */}
+                <textarea value={step.note || ""} onChange={e => updateStep(idx, { note: e.target.value })}
+                  placeholder="Instructions / notes..." rows={2}
+                  style={S.editTextarea} />
+              </div>
+            ))}
+
+            <button onClick={addStep} style={S.addStepBtn}>+ Add step</button>
+          </div>
+
+          {/* Save / Save as New / Delete */}
+          <div style={S.actionRow}>
+            <button onClick={saveEditingItem} disabled={!ei.name.trim() || ei.steps.length === 0}
+              style={{ ...S.doneBtn, flex: 1, opacity: (!ei.name.trim() || ei.steps.length === 0) ? 0.4 : 1 }}>
+              ✓ Save
+            </button>
+            {!ei.isNew && (
+              <button onClick={saveAsNew} disabled={!ei.name.trim() || ei.steps.length === 0}
+                style={{ ...S.pauseBtn, flex: 1, opacity: (!ei.name.trim() || ei.steps.length === 0) ? 0.4 : 1 }}>
+                Save as New
+              </button>
+            )}
+          </div>
+          {!ei.isNew && !ei.confirmDelete && (
+            <button onClick={() => updateEI({ confirmDelete: true })}
+              style={S.deleteBtn}>
+              Delete item
+            </button>
+          )}
+          {ei.confirmDelete && (
+            <div style={{ ...S.actionRow, marginTop: 12 }}>
+              <button onClick={deleteEditingItem}
+                style={{ ...S.deleteBtn, flex: 1, background: C.danger, color: "#fff", border: "none" }}>
+                Yes, delete
+              </button>
+              <button onClick={() => updateEI({ confirmDelete: false })}
+                style={{ ...S.skipBtn, flex: 1 }}>
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // ─── PLAN SCREEN ────────────────────────────────────────────────────
   if (screen === "plan") {
     return (
@@ -595,17 +1018,24 @@ function RoastTimer() {
                 <span style={S.planStatVal}>{startTime ? fmt(startTime) : "—"}</span>
               </div>
               <div style={S.planStat}>
-                <span style={S.planStatLabel}>Serve at</span>
+                <span style={S.planStatLabel}>Serve mains</span>
                 <span style={S.planStatVal}>{String(serveHour).padStart(2,"0")}:{String(serveMin).padStart(2,"0")}</span>
               </div>
               <div style={S.planStat}>
-                <span style={S.planStatLabel}>Total time</span>
+                <span style={S.planStatLabel}>Cook time</span>
                 <span style={S.planStatVal}>{fmtDuration(totalMinsBefore)}</span>
               </div>
-              <div style={S.planStat}>
-                <span style={S.planStatLabel}>Steps</span>
-                <span style={S.planStatVal}>{computedTimeline.length}</span>
-              </div>
+              {hasDessertPhase && lastEvent ? (
+                <div style={S.planStat}>
+                  <span style={S.planStatLabel}>Dessert ready</span>
+                  <span style={{ ...S.planStatVal, color: "#c47a4c" }}>{fmt(lastEvent.absStart)}</span>
+                </div>
+              ) : (
+                <div style={S.planStat}>
+                  <span style={S.planStatLabel}>Steps</span>
+                  <span style={S.planStatVal}>{computedTimeline.length}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -613,28 +1043,31 @@ function RoastTimer() {
             {computedTimeline.map((ev, i) => (
               <div key={ev.id} style={S.tlItem}>
                 <div style={S.tlTime}>{fmt(ev.absStart)}</div>
-                <div style={{ ...S.tlDot, background: ev.colour }} />
+                <div style={{ ...S.tlDot, background: ev.colour, ...(ev.isServeMarker ? { width: 18, height: 18 } : {}) }} />
                 <div style={S.tlContent}>
-                  <div style={S.tlHeader}>
-                    <span style={S.tlItemName}>{ev.itemIcon} {ev.itemName}</span>
-                    <span style={{display:'flex',gap:4}}>
-                      {ev.isBg && ev.durMins > 0 && <span style={S.bgBadge}>HANDS FREE</span>}
-                      {ev.autoPause && <span style={S.pauseBadge}>⏸ PAUSE</span>}
-                    </span>
-                  </div>
-                  <div style={S.tlStep}>{ev.stepName}</div>
-                  {ev.durMins > 0 && <div style={S.tlDur}>{fmtDuration(ev.durMins)}</div>}
-                  <div style={S.tlNote}>{ev.note}</div>
+                  {ev.isServeMarker ? (
+                    <>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: ev.colour }}>{ev.stepName}</div>
+                      <div style={S.tlNote}>{ev.note}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={S.tlHeader}>
+                        <span style={S.tlItemName}>{ev.itemIcon} {ev.itemName}</span>
+                        <span style={{display:'flex',gap:4}}>
+                          {ev.isPostServe && <span style={{ ...S.bgBadge, background: "#c47a4c33", color: "#c47a4c" }}>AFTER MAINS</span>}
+                          {ev.isBg && ev.durMins > 0 && <span style={S.bgBadge}>HANDS FREE</span>}
+                          {ev.autoPause && <span style={S.pauseBadge}>⏸ PAUSE</span>}
+                        </span>
+                      </div>
+                      <div style={S.tlStep}>{ev.stepName}</div>
+                      {ev.durMins > 0 && <div style={S.tlDur}>{fmtDuration(ev.durMins)}</div>}
+                      <div style={S.tlNote}>{ev.note}</div>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
-            <div style={S.tlItem}>
-              <div style={S.tlTime}>{String(serveHour).padStart(2,"0")}:{String(serveMin).padStart(2,"0")}</div>
-              <div style={{ ...S.tlDot, background: "#d4883c", width: 18, height: 18 }} />
-              <div style={S.tlContent}>
-                <div style={{ ...S.tlStep, fontSize: 18, color: "#d4883c" }}>🍽️ SERVE!</div>
-              </div>
-            </div>
           </div>
 
           <button onClick={startCooking} style={S.goBtn}>
@@ -693,7 +1126,7 @@ function RoastTimer() {
         <div style={S.cookContainer}>
           {/* Top bar */}
           <div style={S.cookTopBar}>
-            <button onClick={() => { if (confirm("Abandon the roast?")) setScreen("select"); }} style={S.cookBackBtn}>✕</button>
+            <button onClick={() => setScreen("select")} style={S.cookBackBtn}>✕</button>
             <div style={S.cookProgress}>
               {doneCount} / {totalSteps} done
             </div>
@@ -843,7 +1276,10 @@ function RoastTimer() {
 }
 
 // ─── STYLES ─────────────────────────────────────────────────────────────
-const GFONTS = `@import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap');`;
+const GFONTS = `@import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap');
+button:focus, button:focus-visible { outline: none !important; box-shadow: none !important; -webkit-tap-highlight-color: transparent; }
+input:focus { outline: none; }
+`;
 
 const C = {
   bg: "#1a1614",
@@ -913,12 +1349,12 @@ const S = {
   },
   weightRow: { display: "flex", flexWrap: "wrap", gap: 8 },
   weightBtn: {
-    background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}`,
+    background: "transparent", border: `1px solid ${C.border}`,
     borderRadius: 8, padding: "8px 14px", color: C.textMuted, cursor: "pointer",
-    fontFamily: "'DM Sans'", fontSize: 13, fontWeight: 600, transition: "all 0.15s",
+    fontFamily: "'DM Sans'", fontSize: 13, fontWeight: 500, transition: "all 0.15s", outline: "none",
   },
   weightBtnOn: {
-    background: C.accent + "22", borderColor: C.accent, color: C.accent,
+    background: C.accent, borderColor: C.accent, color: "#1a1210", fontWeight: 700,
   },
   numInput: {
     background: "rgba(255,255,255,0.06)", border: `1px solid ${C.border}`,
@@ -1130,7 +1566,102 @@ const S = {
   doneScreen: {
     textAlign: "center", paddingTop: 80,
   },
+  // Edit screen
+  addBtn: {
+    display: "block", width: "100%", padding: "14px",
+    background: "none", border: `2px dashed ${C.border}`, borderRadius: 14,
+    color: C.textMuted, fontSize: 15, fontWeight: 600, fontFamily: "'DM Sans'",
+    cursor: "pointer", marginBottom: 16,
+  },
+  editInput: {
+    width: "100%", background: "rgba(255,255,255,0.06)", border: `1px solid ${C.border}`,
+    borderRadius: 8, padding: "10px 12px", color: C.text,
+    fontFamily: "'DM Sans'", fontSize: 15, outline: "none",
+  },
+  editTextarea: {
+    width: "100%", background: "rgba(255,255,255,0.06)", border: `1px solid ${C.border}`,
+    borderRadius: 8, padding: "8px 12px", color: C.text, resize: "vertical",
+    fontFamily: "'DM Sans'", fontSize: 13, outline: "none", lineHeight: 1.5,
+  },
+  editSelect: {
+    background: "rgba(255,255,255,0.06)", border: `1px solid ${C.border}`,
+    borderRadius: 8, padding: "8px 10px", color: C.text,
+    fontFamily: "'DM Sans'", fontSize: 13, outline: "none", flex: 1,
+  },
+  emojiGrid: {
+    display: "flex", flexWrap: "wrap", gap: 4,
+  },
+  emojiBtn: {
+    background: "rgba(255,255,255,0.04)", border: "none", borderRadius: 6,
+    width: 36, height: 36, fontSize: 20, cursor: "pointer",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    transition: "all 0.1s",
+  },
+  colourGrid: {
+    display: "flex", flexWrap: "wrap", gap: 6,
+  },
+  colourBtn: {
+    width: 28, height: 28, borderRadius: "50%", border: "none",
+    cursor: "pointer", transition: "all 0.1s",
+  },
+  stepCard: {
+    background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`,
+    borderRadius: 12, padding: "12px", marginBottom: 10,
+    transition: "opacity 0.15s",
+  },
+  stepTopRow: {
+    display: "flex", alignItems: "center", gap: 8, marginBottom: 8,
+  },
+  dragHandle: {
+    fontSize: 18, color: C.textMuted, cursor: "grab", userSelect: "none",
+    lineHeight: 1, padding: "0 4px",
+  },
+  stepNum: {
+    fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase",
+    letterSpacing: 2, flex: 1,
+  },
+  stepDeleteBtn: {
+    background: "none", border: "none", color: C.danger, cursor: "pointer",
+    fontSize: 14, padding: "4px 8px", borderRadius: 6,
+  },
+  stepRow: {
+    display: "flex", gap: 8, marginBottom: 8, alignItems: "center",
+  },
+  durRow: {
+    display: "flex", alignItems: "center", gap: 4,
+  },
+  durBtn: {
+    background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 6,
+    width: 30, height: 30, color: C.text, fontSize: 16, cursor: "pointer",
+    display: "flex", alignItems: "center", justifyContent: "center",
+  },
+  durInput: {
+    width: 50, background: "rgba(255,255,255,0.06)", border: `1px solid ${C.border}`,
+    borderRadius: 6, padding: "6px 4px", color: C.text, textAlign: "center",
+    fontFamily: "'JetBrains Mono'", fontSize: 14, outline: "none",
+  },
+  durLabel: {
+    fontSize: 12, color: C.textMuted, marginLeft: 2,
+  },
+  stepFlags: {
+    display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8,
+  },
+  flagLabel: {
+    display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: C.textMuted,
+    cursor: "pointer", userSelect: "none",
+  },
+  addStepBtn: {
+    width: "100%", padding: "12px", background: "none",
+    border: `1px dashed ${C.border}`, borderRadius: 10,
+    color: C.accent, fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans'",
+    cursor: "pointer", marginTop: 4,
+  },
+  deleteBtn: {
+    display: "block", width: "100%", padding: "12px",
+    background: "none", border: `1px solid ${C.danger}44`,
+    borderRadius: 12, color: C.danger, fontSize: 14, fontWeight: 600,
+    fontFamily: "'DM Sans'", cursor: "pointer", marginTop: 12, textAlign: "center",
+  },
 };
-// RENDER
 ReactDOM.createRoot(document.getElementById("root")).render(<RoastTimer />);
 </script></body></html>
